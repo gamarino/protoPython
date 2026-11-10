@@ -429,8 +429,8 @@ static const proto::ProtoObject* sys_getframemodulename(
         arg = positionalParameters->getAt(context, 0);
     } else if (keywordParameters) {
         const proto::ProtoString* depthS = PythonEnvironment::getInternedString(context, "depth");
-        if (keywordParameters->has(context, depthS->getHash(context))) {
-            arg = keywordParameters->getAt(context, depthS->getHash(context));
+        if (keywordParameters->has(context, PythonEnvironment::kwKey(context, depthS))) {
+            arg = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, depthS));
         }
     }
     proto::proto_long depth = 0;
@@ -574,7 +574,7 @@ static const proto::ProtoObject* sys_set_asyncgen_hooks(
             v = positionalParameters->getAt(context, w);
         }
         if (keywordParameters) {
-            const proto::proto_ulong h = PythonEnvironment::getInternedString(context, kParams[w])->getHash(context);
+            const proto::proto_ulong h = PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, kParams[w]));
             if (keywordParameters->has(context, h)) v = keywordParameters->getAt(context, h);
         }
         if (!v) continue;
@@ -937,7 +937,7 @@ static const proto::ProtoObject* sys_set_coroutine_origin_tracking_depth(
     const proto::ProtoObject* depth = (args && args->getSize(context) >= 1) ? args->getAt(context, 0) : nullptr;
     if (!depth && kw) {
         const proto::ProtoString* depthS = PythonEnvironment::getInternedString(context, "depth");
-        if (kw->has(context, depthS->getHash(context))) depth = kw->getAt(context, depthS->getHash(context));
+        if (kw->has(context, PythonEnvironment::kwKey(context, depthS))) depth = kw->getAt(context, PythonEnvironment::kwKey(context, depthS));
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!depth || !depth->isInteger(context)) {

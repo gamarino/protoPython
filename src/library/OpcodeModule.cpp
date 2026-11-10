@@ -68,7 +68,7 @@ static const proto::ProtoObject* py_stack_effect(
     const unsigned long n = args ? static_cast<unsigned long>(args->getSize(ctx)) : 0;
     auto keyword = [&](const char* name) -> const proto::ProtoObject* {
         if (!kwargs) return nullptr;
-        const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, name)->getHash(ctx);
+        const proto::proto_ulong h = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, name));
         return kwargs->has(ctx, h) ? kwargs->getAt(ctx, h) : nullptr;
     };
     if (n < 1 || n > 2) {

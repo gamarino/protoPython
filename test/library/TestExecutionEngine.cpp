@@ -1261,3 +1261,85 @@ TEST(ExecutionEngineTest, ConcurrentExecutionTwoThreads) {
     EXPECT_EQ(aVal->asLong(ctx), 1);
     EXPECT_EQ(bVal->asLong(ctx), 2);
 }
+
+// dictBucket (PythonEnvironment.cpp) recognises a bucket by protoCore's
+// ProtoMap pointer tag, a constant of protoCore's internal header: a real
+// ProtoMap must carry it.
+TEST(ExecutionEngineTest, DictBucketTagMatchesProtoMap) {
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoMap* m = ctx->newMap();
+    ASSERT_NE(m, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(m->asObject(ctx)) & 0x3F, 27u);
+}
+
+// A dict or set indexes a key by its Python hash h: the SmallInteger tagged
+// word of h when h fits one, else h. A str and the int whose word is the
+// str's index share it; an int other than -1 keeps its own word.
+TEST(ExecutionEngineTest, DictKeyIndexFollowsPythonHash) {
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    auto index = [&](const proto::ProtoObject* key) {
+        proto::proto_ulong h = 0;
+        EXPECT_TRUE(protoPython::PythonEnvironment::hashKey(ctx, key, h));
+        return h;
+    };
+    auto word = [](long long v) {
+        return static_cast<proto::proto_ulong>(reinterpret_cast<uintptr_t>(proto::makeSmallInt(v)));
+    };
+    EXPECT_EQ(index(ctx->fromInteger(5)), word(5));
+    EXPECT_EQ(index(ctx->fromInteger(-1)), word(-2));
+    EXPECT_EQ(index(PROTO_TRUE), word(1));
+    EXPECT_EQ(index(ctx->fromDouble(3.0)), word(3));
+    for (int i = 0; i < 4096; ++i) {
+        const proto::ProtoObject* s = ctx->fromUTF8String(("k" + std::to_string(i)).c_str());
+        const long long h = static_cast<long long>(s->getHash(ctx));
+        const proto::proto_ulong expected = proto::smallIntInRange(h) ? word(h) : static_cast<proto::proto_ulong>(h);
+        ASSERT_EQ(index(s), expected) << i;
+    }
+}
+
+// Keyword arguments from a C++ caller follow protoCore's calling convention:
+// each pair names the keyword by its interned symbol, which protoPython
+// matches by pointer (docs/CALLING_CONVENTION.md, rule 3).
+TEST(ExecutionEngineTest, KeywordArgumentsFromCppByNamePointer) {
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    // The probes are published on `sys`, a module C++ reaches by name.
+    ASSERT_EQ(env.executeString(
+        "import sys\n"
+        "def kwprobe(a, *, b=0, **rest):\n"
+        "    return (a, b, sorted(rest.items()))\n"
+        "sys.kwprobe = kwprobe\n"
+        "sys.kwdict = {}\n", "<kwprobe>"), 0);
+    const proto::ProtoObject* sysm = env.resolve("sys", ctx);
+    ASSERT_NE(sysm, nullptr);
+    const proto::ProtoObject* f = sysm->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "kwprobe"));
+    ASSERT_NE(f, nullptr);
+    ASSERT_NE(f, PROTO_NONE);
+    const proto::ProtoObject* argv[1] = {ctx->fromInteger(1)};
+    const proto::ProtoKeywordArgument pairs[2] = {
+        {proto::ProtoString::createSymbol(ctx, "b"), ctx->fromInteger(2)},
+        {proto::ProtoString::createSymbol(ctx, "extra"), ctx->fromInteger(3)},
+    };
+    proto::ProtoArguments args(argv, 1);
+    proto::ProtoKeywordArguments kwargs(pairs, 2);
+    const proto::ProtoObject* r = protoPython::invokePythonCallable(ctx, f, &args, &kwargs);
+    ASSERT_NE(r, nullptr);
+    env.setAttribute(ctx, sysm, proto::ProtoString::createSymbol(ctx, "kwresult"), r);
+    ASSERT_EQ(env.executeString(
+        "import sys\n"
+        "assert sys.kwresult == (1, 2, [('extra', 3)]), sys.kwresult\n", "<kwcheck>"), 0);
+
+    // A built-in that enumerates its keywords (dict.update) reads the pairs.
+    const proto::ProtoObject* d = sysm->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "kwdict"));
+    ASSERT_NE(d, nullptr);
+    const proto::ProtoObject* upd = d->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "update"));
+    ASSERT_NE(upd, nullptr);
+    ASSERT_NE(upd->asMethod(ctx), nullptr);
+    proto::ProtoArguments none(nullptr, 0);
+    upd->asMethod(ctx)(ctx, d, nullptr, &none, &kwargs);
+    ASSERT_EQ(env.executeString(
+        "import sys\n"
+        "assert sys.kwdict == {'b': 2, 'extra': 3}, sys.kwdict\n", "<kwcheck2>"), 0);
+}

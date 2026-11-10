@@ -1106,7 +1106,7 @@ static const proto::ProtoObject* io_open_arg(proto::ProtoContext* context, const
                                              const char* name) {
     if (pos && pos->getSize(context) > index) return pos->getAt(context, static_cast<int>(index));
     if (kw) {
-        const proto::proto_ulong h = PythonEnvironment::getInternedString(context, name)->getHash(context);
+        const proto::proto_ulong h = PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, name));
         if (kw->has(context, h)) return kw->getAt(context, h);
     }
     return nullptr;

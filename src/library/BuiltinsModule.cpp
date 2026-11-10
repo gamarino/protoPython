@@ -160,7 +160,7 @@ static const proto::ProtoObject* py_import(
     auto param = [&](size_t pos, const char* kwName) -> const proto::ProtoObject* {
         if (argCount > pos) return positionalParameters->getAt(context, static_cast<int>(pos));
         if (keywordParameters) {
-            const proto::proto_ulong h = PythonEnvironment::getInternedString(context, kwName)->getHash(context);
+            const proto::proto_ulong h = PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, kwName));
             if (keywordParameters->has(context, h)) return keywordParameters->getAt(context, h);
         }
         return PROTO_NONE;
@@ -565,14 +565,13 @@ static const proto::ProtoObject* py_print(
     bool toStderr = false;
     const proto::ProtoObject* explicitFile = nullptr;
     if (env && keywordParameters && keywordParameters->getSize(context) > 0) {
-        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();
-        if (kwNames) {
+        {
             const proto::ProtoString* sepKey = PythonEnvironment::getInternedString(context, "sep");
             const proto::ProtoString* endKey = PythonEnvironment::getInternedString(context, "end");
             const proto::ProtoString* fileKey = PythonEnvironment::getInternedString(context, "file");
-            proto::proto_ulong sh = sepKey->getHash(context);
-            proto::proto_ulong eh = endKey->getHash(context);
-            proto::proto_ulong fh = fileKey->getHash(context);
+            proto::proto_ulong sh = PythonEnvironment::kwKey(context, sepKey);
+            proto::proto_ulong eh = PythonEnvironment::kwKey(context, endKey);
+            proto::proto_ulong fh = PythonEnvironment::kwKey(context, fileKey);
             if (keywordParameters->has(context, sh)) {
                 const proto::ProtoObject* v = keywordParameters->getAt(context, sh);
                 if (v && v->isString(context)) {
@@ -1451,18 +1450,13 @@ const proto::ProtoObject* py_complex(
         const proto::ProtoString* realS = PythonEnvironment::getInternedString(context, "real");
         const proto::ProtoString* imagS = PythonEnvironment::getInternedString(context, "imag");
         // CPython: complex() accepts only `real` and `imag` keywords.
-        // Walk getCurrentKwNames AND verify the name's hash is actually
-        // in this call's keywordParameters (getCurrentKwNames is a
-        // thread-local that can leak from an outer call when this call
-        // site received no kwargs).
-        const proto::ProtoTuple* kwNames = env ? env->getCurrentKwNames() : nullptr;
-        if (kwNames && env) {
-            proto::proto_ulong nk = kwNames->getSize(context);
-            for (proto::proto_ulong i = 0; i < nk; ++i) {
-                const proto::ProtoObject* kn = kwNames->getAt(context, static_cast<int>(i));
-                if (!kn || !kn->isString(context)) continue;
+        // The call's own pairs name its keywords (interned names).
+        if (env) {
+            const proto::ProtoKeywordArgument* kwPairs = keywordParameters->pairs();
+            for (unsigned i = 0; i < keywordParameters->count(); ++i) {
+                if (!kwPairs[i].name) continue;
+                const proto::ProtoObject* kn = kwPairs[i].name->asObject(context);
                 if (kn == realS->asObject(context) || kn == imagS->asObject(context)) continue;
-                if (!keywordParameters->has(context, kn->asString(context)->getHash(context))) continue;
                 std::string kname;
                 kn->asString(context)->toUTF8String(context, kname);
                 env->raiseTypeError(context,
@@ -1470,13 +1464,13 @@ const proto::ProtoObject* py_complex(
                 return nullptr;
             }
         }
-        if (keywordParameters->has(context, realS->getHash(context))) {
-            const proto::ProtoObject* r = keywordParameters->getAt(context, realS->getHash(context));
+        if (keywordParameters->has(context, PythonEnvironment::kwKey(context, realS))) {
+            const proto::ProtoObject* r = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, realS));
             if (r->isDouble(context)) real = r->asDouble(context);
             else if (r->isInteger(context)) real = (double)r->asLong(context);
         }
-        if (keywordParameters->has(context, imagS->getHash(context))) {
-            const proto::ProtoObject* i = keywordParameters->getAt(context, imagS->getHash(context));
+        if (keywordParameters->has(context, PythonEnvironment::kwKey(context, imagS))) {
+            const proto::ProtoObject* i = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, imagS));
             if (i->isDouble(context)) imag = i->asDouble(context);
             else if (i->isInteger(context)) imag = (double)i->asLong(context);
         }
@@ -2014,7 +2008,7 @@ static const proto::ProtoObject* py_enumerate(
     // Also honor `start=` keyword (enumerate(iter, start=N) shape).
     if (keywordParameters) {
         const proto::ProtoString* startS = PythonEnvironment::getInternedString(context, "start");
-        proto::proto_ulong sh = startS->getHash(context);
+        proto::proto_ulong sh = PythonEnvironment::kwKey(context, startS);
         if (keywordParameters->has(context, sh)) {
             const proto::ProtoObject* sv = keywordParameters->getAt(context, sh);
             if (sv && sv->isInteger(context)) {
@@ -5430,12 +5424,12 @@ static const proto::ProtoObject* py_sorted(
     const proto::ProtoObject* keyFn = nullptr;
     bool reverse = false;
     if (keywordParameters) {
-        proto::proto_ulong keyH = PythonEnvironment::getInternedString(context, "key")->getHash(context);
+        proto::proto_ulong keyH = PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, "key"));
         if (keywordParameters->has(context, keyH)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, keyH);
             if (v && v != PROTO_NONE) keyFn = v;
         }
-        proto::proto_ulong revH = PythonEnvironment::getInternedString(context, "reverse")->getHash(context);
+        proto::proto_ulong revH = PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, "reverse"));
         if (keywordParameters->has(context, revH)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, revH);
             if (v) {
@@ -5608,16 +5602,24 @@ static const proto::ProtoObject* py_hash(
         return nullptr;
     }
     if (!hashMethod) return PROTO_NONE;
+    // CPython: an int that __hash__ returns is reduced as hash(int) reduces
+    // it (a large int to a word, -1 to -2), the value dicts and sets index by.
+    auto reduced = [&](const proto::ProtoObject* r) -> const proto::ProtoObject* {
+        if (r && !proto::isSmallInt(r) && r->isInteger(context))
+            return context->fromInteger(PythonEnvironment::intHashValue(context, r));
+        if (r && proto::isSmallInt(r) && proto::asSmallInt(r) == -1) return context->fromInteger(-2);
+        return r;
+    };
     if (hashMethod->asMethod(context)) {
-        return hashMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
+        return reduced(hashMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, argsView(proto::ProtoArguments(nullptr, 0)), nullptr));
     }
     // Python user `def __hash__(self)`: prepend self via invokePythonCallable.
     const proto::ProtoString* codeS = env ? env->getCodeString() : PythonEnvironment::getInternedString(context, "__code__");
     if (codeS && hashMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
         const proto::ProtoList* selfPrepended = context->newList()->appendLast(context, obj);
-        return ::protoPython::invokePythonCallable(context, hashMethod, selfPrepended, nullptr);
+        return reduced(::protoPython::invokePythonCallable(context, hashMethod, selfPrepended, nullptr));
     }
-    return ::protoPython::invokePythonCallable(context, hashMethod, context->newList(), nullptr);
+    return reduced(::protoPython::invokePythonCallable(context, hashMethod, context->newList(), nullptr));
 }
 
 static const proto::ProtoObject* py_hasattr(
@@ -7946,19 +7948,12 @@ const proto::ProtoObject* py_type(
             // The methods' `__class__` cell (zero-argument super()) holds
             // the class before the hook runs, which may instantiate it.
             if (dict) env->applyClassCell(context, dict, targetClass);
-            // The kw-names stack can belong to an enclosing keyword call:
-            // keep only the names this call actually received.
+            // The names this call received, in call order.
             const proto::ProtoTuple* hookNames = nullptr;
-            const proto::ProtoTuple* curNames = env->getCurrentKwNames();
-            if (curNames && keywordParameters && keywordParameters->getSize(context) > 0) {
+            if (keywordParameters && keywordParameters->getSize(context) > 0) {
                 const proto::ProtoList* fk = context->newList();
-                for (proto::proto_ulong i = 0; i < curNames->getSize(context); ++i) {
-                    const proto::ProtoObject* k = curNames->getAt(context, static_cast<int>(i));
-                    if (k && k->isString(context)
-                        && keywordParameters->has(context, k->getHash(context))) {
-                        fk = fk->appendLast(context, k);
-                    }
-                }
+                for (const proto::ProtoKeywordArgument& p : env->keywordsInCallOrder(context, keywordParameters))
+                    fk = fk->appendLast(context, p.name->asObject(context));
                 if (fk->getSize(context) > 0) hookNames = context->newTupleFromList(fk);
             }
             if (!protoPython::invokeInitSubclass(context, targetClass,
@@ -8818,10 +8813,10 @@ static const proto::ProtoObject* py_min_max(
     bool hasDefault = false;
     if (keywordParameters) {
         const proto::ProtoString* keyS = PythonEnvironment::getInternedString(context, "key");
-        keyFunc = keywordParameters->getAt(context, keyS->getHash(context));
+        keyFunc = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, keyS));
         const proto::ProtoString* defS = PythonEnvironment::getInternedString(context, "default");
-        if (keywordParameters->has(context, defS->getHash(context))) {
-            defaultVal = keywordParameters->getAt(context, defS->getHash(context));
+        if (keywordParameters->has(context, PythonEnvironment::kwKey(context, defS))) {
+            defaultVal = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, defS));
             hasDefault = true;
         }
     }
@@ -9698,7 +9693,7 @@ static const proto::ProtoObject* py_property(
     if (positionalParameters->getSize(context) >= 5) {
         docObj = positionalParameters->getAt(context, 4);
     } else if (keywordParameters) {
-        docObj = keywordParameters->getAt(context, PythonEnvironment::getInternedString(context, "doc")->getHash(context));
+        docObj = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, "doc")));
     }
     if ((!docObj || docObj == PROTO_NONE) && positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* fget = positionalParameters->getAt(context, 1);
@@ -10843,7 +10838,7 @@ static const proto::ProtoObject* py_zip(
     bool strict = false;
     if (keywordParameters && env) {
         const proto::ProtoString* strictS = PythonEnvironment::getInternedString(context, "strict");
-        proto::proto_ulong sh = strictS->getHash(context);
+        proto::proto_ulong sh = PythonEnvironment::kwKey(context, strictS);
         if (keywordParameters->has(context, sh)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, sh);
             if (v == PROTO_TRUE) strict = true;
@@ -11074,7 +11069,7 @@ static const proto::ProtoObject* py_map(
     bool strict = false;
     if (keywordParameters && keywordParameters->getSize(context) > 0) {
         const proto::ProtoString* strictS = PythonEnvironment::getInternedString(context, "strict");
-        const proto::proto_ulong sh = strictS->getHash(context);
+        const proto::proto_ulong sh = PythonEnvironment::kwKey(context, strictS);
         if (keywordParameters->has(context, sh)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, sh);
             strict = env ? env->isTrue(v) : (v == PROTO_TRUE);
@@ -11552,8 +11547,8 @@ const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const 
     if (kwargs && kwargs->getSize(ctx) > 0) {
         const proto::ProtoString* encS = PythonEnvironment::getInternedString(ctx, "encoding");
         const proto::ProtoString* errS = PythonEnvironment::getInternedString(ctx, "errors");
-        if (kwargs->has(ctx, encS->getHash(ctx))) encodingArg = kwargs->getAt(ctx, encS->getHash(ctx));
-        if (kwargs->has(ctx, errS->getHash(ctx))) errorsArg = kwargs->getAt(ctx, errS->getHash(ctx));
+        if (kwargs->has(ctx, PythonEnvironment::kwKey(ctx, encS))) encodingArg = kwargs->getAt(ctx, PythonEnvironment::kwKey(ctx, encS));
+        if (kwargs->has(ctx, PythonEnvironment::kwKey(ctx, errS))) errorsArg = kwargs->getAt(ctx, PythonEnvironment::kwKey(ctx, errS));
     }
 
     // Initial buffer content: empty unless an arg was provided.
@@ -12144,8 +12139,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         if (kwargs && kwargs->getSize(context) > 0) {
             const proto::ProtoString* encS = PythonEnvironment::getInternedString(context, "encoding");
             const proto::ProtoString* errS = PythonEnvironment::getInternedString(context, "errors");
-            if (kwargs->has(context, encS->getHash(context))) encodingArg = kwargs->getAt(context, encS->getHash(context));
-            if (kwargs->has(context, errS->getHash(context))) errorsArg = kwargs->getAt(context, errS->getHash(context));
+            if (kwargs->has(context, PythonEnvironment::kwKey(context, encS))) encodingArg = kwargs->getAt(context, PythonEnvironment::kwKey(context, encS));
+            if (kwargs->has(context, PythonEnvironment::kwKey(context, errS))) errorsArg = kwargs->getAt(context, PythonEnvironment::kwKey(context, errS));
         }
 
         std::string initial;

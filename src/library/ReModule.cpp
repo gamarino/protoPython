@@ -1459,7 +1459,7 @@ const proto::ProtoObject* argAt(proto::ProtoContext* ctx, const proto::ProtoArgu
                                 const proto::ProtoKeywordArguments* kw, proto::proto_ulong idx, const char* name) {
     if (pos && pos->getSize(ctx) > idx) return pos->getAt(ctx, static_cast<int>(idx));
     if (kw && name && kw->getSize(ctx) > 0) {
-        const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, name)->getHash(ctx);
+        const proto::proto_ulong h = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, name));
         if (kw->has(ctx, h)) return kw->getAt(ctx, h);
     }
     return nullptr;

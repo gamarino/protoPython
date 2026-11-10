@@ -500,6 +500,46 @@ set_tests_properties(protopy_dict_digest_key_collision PROPERTIES
     TIMEOUT 120
     PASS_REGULAR_EXPRESSION "dict_digest_key_collision: ok"
     LABELS "regression_gate")
+# Every dict and set a built-in operation produces is mutable (dict | dict).
+add_test(NAME protopy_dict_set_results_mutable
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_set_results_mutable.py)
+set_tests_properties(protopy_dict_set_results_mutable PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "dict_set_results_mutable: ok"
+    LABELS "regression_gate")
+# dict_keys / dict_items compare and combine as sets; dict_values by identity.
+add_test(NAME protopy_dict_view_set_ops
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_view_set_ops.py)
+set_tests_properties(protopy_dict_view_set_ops PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "dict_view_set_ops: ok"
+    LABELS "regression_gate")
+# Module namespace writes keep earlier names; update() writes dunders and keywords.
+add_test(NAME protopy_module_namespace_update
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/module_namespace_update.py)
+set_tests_properties(protopy_module_namespace_update PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "module_namespace_update: ok"
+    LABELS "regression_gate")
+# A key whose __hash__ returns hash(x) and equals x finds x (one index rule).
+add_test(NAME protopy_dict_user_hash_index
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/dict_user_hash_index.py)
+set_tests_properties(protopy_dict_user_hash_index PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "dict_user_hash_index: ok"
+    LABELS "regression_gate")
+# Keyword arguments are keyed by the interned name's pointer on every path.
+add_test(NAME protopy_kwargs_name_pointer
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/kwargs_name_pointer.py)
+set_tests_properties(protopy_kwargs_name_pointer PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    PASS_REGULAR_EXPRESSION "kwargs_name_pointer: ok"
+    LABELS "regression_gate")
 # Unequal set elements with one hash stay distinct; membership calls __eq__.
 add_test(NAME protopy_set_colliding_hash
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/set_colliding_hash.py)

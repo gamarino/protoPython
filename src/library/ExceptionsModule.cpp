@@ -461,7 +461,7 @@ static const proto::ProtoObject* importerror_init(
     }
     for (const char* attr : {"name", "path", "name_from"}) {
         const proto::ProtoString* key = PythonEnvironment::getInternedString(context, attr);
-        const proto::proto_ulong h = key->getHash(context);
+        const proto::proto_ulong h = PythonEnvironment::kwKey(context, key);
         const proto::ProtoObject* value = (keywordParameters && keywordParameters->has(context, h))
             ? keywordParameters->getAt(context, h) : PROTO_NONE;
         instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, key, value);

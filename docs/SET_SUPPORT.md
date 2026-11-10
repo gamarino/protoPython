@@ -1,9 +1,11 @@
 # Set Support
 
 Python `set` and `frozenset` objects keep their elements in `__data__`, a *set
-table*: a protoCore `ProtoSparseList` indexed by the element's key hash, the
-hash dict keys are filed under (so `1`, `1.0` and `True` are one element, and a
-class's own `__hash__` is honoured). A slot holds
+table*: a protoCore `ProtoSparseList` indexed by the element's key index, the
+index dict keys are filed under: the SmallInteger tagged word of the element's
+Python hash `h` (what `hash(x)` returns) when `h` fits one, else `h`. So `1`,
+`1.0` and `True` are one element, a class's own `__hash__` is honoured, and an
+object whose `__hash__` returns `hash(5)` shares an index with `5`. A slot holds
 
 - the element itself, when it is the only element with that hash (an element
   whose own representation is a raw `ProtoList` goes in a bucket of one, so it

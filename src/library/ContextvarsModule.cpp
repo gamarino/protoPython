@@ -54,7 +54,7 @@ static const proto::ProtoObject* cv_call(proto::ProtoContext* ctx,
     }
     if (kw) {
         const proto::ProtoString* defKey = sym(ctx, "default");
-        const proto::ProtoObject* defVal = kw->getAt(ctx, defKey->getHash(ctx));
+        const proto::ProtoObject* defVal = kw->getAt(ctx, PythonEnvironment::kwKey(ctx, defKey));
         if (defVal && defVal != PROTO_NONE) {
             inst = inst->setAttribute(ctx, sym(ctx, "__cv_default__"), defVal);
             inst = inst->setAttribute(ctx, sym(ctx, "__cv_has_default__"), PROTO_TRUE);

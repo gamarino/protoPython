@@ -2611,6 +2611,12 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
 
     if (op == 6 || op == 7) { // in, not in
         bool found = false;
+        // dict_keys / dict_items: membership by hash; an unhashable key
+        // raises TypeError, as in CPython.
+        {
+            const int inView = PythonEnvironment::dictViewMembership(ctx, b, a);
+            if (inView >= 0) return ((op == 6) == (inView == 1)) ? PROTO_TRUE : PROTO_FALSE;
+        }
         // Priority dispatch: when b is a user-class instance whose own
         // class defines __contains__ (in OWN attrs), AND its class is
         // NOT one of the protoCore built-in containers (whose own
@@ -5324,8 +5330,13 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
     }
     if (prepareM && prepareM != PROTO_NONE) {
         const proto::ProtoList* prepareArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases);
-        // Use keyword parameters if available
+        // The class keywords without `metaclass`, which __build_class__
+        // consumes, as CPython passes them to __prepare__.
         const proto::ProtoSparseList* kw = kwdsArgs;
+        if (kw) {
+            const proto::proto_ulong metaK = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "metaclass"));
+            if (kw->has(ctx, metaK)) kw = kw->removeAt(ctx, metaK);
+        }
         const proto::ProtoObject* nsObj = invokeCallable(ctx, prepareM, prepareArgs, kw);
         if (diag_local) {
             fprintf(stderr, "TRACE_PREPARE: invokeCallable returned nsObj=%p\n", (void*)nsObj); fflush(stderr);
@@ -5564,8 +5575,8 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
         const proto::ProtoSparseList* rawKw = kwdsArgs;
         const proto::ProtoString* metaKey =
             PythonEnvironment::getInternedString(ctx, "metaclass");
-        if (rawKw->has(ctx, metaKey->getHash(ctx))) {
-            kw = rawKw->removeAt(ctx, metaKey->getHash(ctx));
+        if (rawKw->has(ctx, PythonEnvironment::kwKey(ctx, metaKey))) {
+            kw = rawKw->removeAt(ctx, PythonEnvironment::kwKey(ctx, metaKey));
         } else {
             kw = rawKw;
         }
@@ -9289,7 +9300,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             for (int j = 0; j < nkw; ++j) {
                 const proto::ProtoObject* key = namesTuple->getAt(ctx, j);
                 const proto::ProtoObject* val = stack[firstArgIdx + npos + j];
-                kwMap = kwMap->setAt(ctx, key->getHash(ctx), val);
+                kwMap = kwMap->setAt(ctx, PythonEnvironment::kwKey(ctx, key), val);
                 stack[stack.top - 1] = kwMap->asObject(ctx);
             }
             

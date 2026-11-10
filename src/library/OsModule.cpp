@@ -79,7 +79,7 @@ static const proto::ProtoObject* notAPath(proto::ProtoContext* ctx) {
 // is not taken for the directory.
 static bool followSymlinksArg(proto::ProtoContext* ctx, const proto::ProtoKeywordArguments* kwargs) {
     if (!kwargs) return true;
-    const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, "follow_symlinks")->getHash(ctx);
+    const proto::proto_ulong h = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "follow_symlinks"));
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     return !(kwargs->has(ctx, h) && env) || env->isTrue(kwargs->getAt(ctx, h));
 }
@@ -1172,12 +1172,12 @@ static const proto::ProtoObject* py_utime(
     const proto::ProtoObject* nsObj = nullptr;
     if (posArgs->getSize(ctx) >= 2) timesObj = posArgs->getAt(ctx, 1);
     if (kwargs) {
-        proto::proto_ulong timesH = PythonEnvironment::getInternedString(ctx, "times")->getHash(ctx);
+        proto::proto_ulong timesH = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "times"));
         if (kwargs->has(ctx, timesH)) {
             const proto::ProtoObject* v = kwargs->getAt(ctx, timesH);
             if (v && v != PROTO_NONE) timesObj = v;
         }
-        proto::proto_ulong nsH = PythonEnvironment::getInternedString(ctx, "ns")->getHash(ctx);
+        proto::proto_ulong nsH = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "ns"));
         if (kwargs->has(ctx, nsH)) {
             const proto::ProtoObject* v = kwargs->getAt(ctx, nsH);
             if (v && v != PROTO_NONE) nsObj = v;
@@ -1630,7 +1630,7 @@ static const proto::ProtoObject* py_os_symlink(proto::ProtoContext* ctx, const p
     if (!PythonEnvironment::fsPathArgument(ctx, args->getAt(ctx, 1), dst)) return notAPath(ctx);
     const proto::ProtoObject* dirArg = args->getSize(ctx) > 2 ? args->getAt(ctx, 2) : nullptr;
     if (!dirArg && kwargs) {
-        const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, "target_is_directory")->getHash(ctx);
+        const proto::proto_ulong h = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "target_is_directory"));
         if (kwargs->has(ctx, h)) dirArg = kwargs->getAt(ctx, h);
     }
     const bool targetIsDirectory = dirArg && env && env->isTrue(dirArg);
@@ -1839,7 +1839,7 @@ static const proto::ProtoObject* py_os_dup2(
         inheritable = (arg && env) ? env->isTrue(arg) : true;
     }
     if (kwargs) {
-        proto::proto_ulong inhH = PythonEnvironment::getInternedString(ctx, "inheritable")->getHash(ctx);
+        proto::proto_ulong inhH = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "inheritable"));
         if (kwargs->has(ctx, inhH)) {
             const proto::ProtoObject* v = kwargs->getAt(ctx, inhH);
             if (v && v != PROTO_NONE && env) inheritable = env->isTrue(v);
@@ -2653,8 +2653,8 @@ static const proto::ProtoObject* py_os_register_at_fork(
     bool any = false;
     for (int i = 0; i < 3; ++i) {
         const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, names[i]);
-        if (!kwargs || !kwargs->has(ctx, key->getHash(ctx))) continue;
-        const proto::ProtoObject* fn = kwargs->getAt(ctx, key->getHash(ctx));
+        if (!kwargs || !kwargs->has(ctx, PythonEnvironment::kwKey(ctx, key))) continue;
+        const proto::ProtoObject* fn = kwargs->getAt(ctx, PythonEnvironment::kwKey(ctx, key));
         if (!fn || fn == PROTO_NONE) continue;
         const proto::ProtoObject* callable = env->getBuiltins()->getAttribute(ctx,
             PythonEnvironment::getInternedString(ctx, "callable"));

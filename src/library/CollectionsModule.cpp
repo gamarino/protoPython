@@ -782,8 +782,8 @@ static const proto::ProtoObject* py_deque_init(
     const proto::ProtoObject* maxlenObj = nargs > argOff + 1
         ? posArgs->getAt(ctx, static_cast<int>(argOff + 1)) : PROTO_NONE;
     if (kwArgs) {
-        proto::proto_ulong iterableH = PythonEnvironment::getInternedString(ctx, "iterable")->getHash(ctx);
-        proto::proto_ulong maxlenH = PythonEnvironment::getInternedString(ctx, "maxlen")->getHash(ctx);
+        proto::proto_ulong iterableH = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "iterable"));
+        proto::proto_ulong maxlenH = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "maxlen"));
         if (kwArgs->has(ctx, iterableH)) iterable = kwArgs->getAt(ctx, iterableH);
         if (kwArgs->has(ctx, maxlenH)) maxlenObj = kwArgs->getAt(ctx, maxlenH);
     }

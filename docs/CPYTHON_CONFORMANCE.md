@@ -94,6 +94,15 @@ defect and adds a `test/regression/*.py` test registered in
   `hash(frozenset(...))` uses another algorithm; `isinstance(len,
   collections.abc.Callable)` is False; `vars(exc)` shows `args`; the
   abstract-instantiation `TypeError` does not name the methods.
+- **Dict views and namespaces (found 2026-11-10, review of 1.2.2):**
+  `d.keys()`, `d.items()` and `d.values()` are snapshots of the dict when the
+  view was made: after `k = d.keys(); d['b'] = 2`, `len(k)`, `'b' in k`,
+  iteration and the set operations still see the old contents (CPython's views
+  are live). Adding or removing keys while iterating over a dict or a view
+  raises no `RuntimeError` (CPython raises `dictionary changed size during
+  iteration`); the iteration walks the keys present when it started. A module
+  namespace (`vars(module)`, `globals()`) accepts only `str` keys: storing
+  another key, also through `update()`, raises `TypeError` (CPython stores it).
 - **collections.abc:** the ABCs are native classes without `ABCMeta`; each root ABC's
   `__init_subclass__` computes `__abstractmethods__`, so a subclass whose own
   `__init_subclass__` skips `super()` is not checked for abstract methods.

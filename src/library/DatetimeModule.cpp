@@ -16,7 +16,7 @@ namespace datetime {
 static const proto::ProtoObject* getKwArg(proto::ProtoContext* ctx, const proto::ProtoKeywordArguments* kwArgs, const std::string& name) {
     if (!kwArgs) return nullptr;
     const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, name.c_str());
-    return kwArgs->getAt(ctx, nameS->getHash(ctx));
+    return kwArgs->getAt(ctx, PythonEnvironment::kwKey(ctx, nameS));
 }
 
 // timedelta

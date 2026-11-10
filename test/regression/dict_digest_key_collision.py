@@ -9,74 +9,76 @@
 # keyword arguments, module and class namespaces, exec locals) now confirms
 # a hit by identity, then equality.
 #
-# The twins are found at run time: for a digest h with h & 0x3FF == 1, the
-# int h >> 10 (sign-extended at 2**54) has key hash h.
+# The twins are found at run time. A dict files a key under the index of its
+# Python hash h (hash(key)): the tagged word (h << 10) | 1 when h fits a
+# SmallInteger, else h itself (64-bit). An int n other than -1 is filed
+# under its own word, so for a digest h outside the SmallInteger range with
+# h & 0x3FF == 1, the int h >> 10 (sign-extended at 2**54) shares its index.
+# Each pair is checked against that model before use; a generator that finds
+# no twin within the bound is skipped with a message, never silently.
 
-import struct
 import sys
 
 MASK = (1 << 64) - 1
+SMALL_MIN, SMALL_MAX = -(1 << 53), (1 << 53) - 1
+BOUND = 200000
+
+
+def index_of(h):
+    if SMALL_MIN <= h <= SMALL_MAX:
+        return ((h << 10) | 1) & MASK
+    return h & MASK
 
 
 def int_twin(h):
-    h &= MASK
-    if h & 0x3FF != 1:
+    if SMALL_MIN <= h <= SMALL_MAX:
         return None
-    n = h >> 10
+    hu = h & MASK
+    if hu & 0x3FF != 1:
+        return None
+    n = hu >> 10
     return n - (1 << 54) if n >= 1 << 53 else n
 
 
-def find(make, h):
-    i = 0
-    while True:
+def find(what, make):
+    for i in range(BOUND):
         k = make(i)
-        n = int_twin(h(k))
+        n = int_twin(hash(k))
         if n is not None:
+            # The pair really collides: one index, two unequal keys.
+            assert index_of(hash(k)) == index_of(hash(n)), (what, k, n)
+            assert k != n, (what, k, n)
             return k, n
-        i += 1
-
-
-def fnv_bytes(b):
-    h = 14695981039346656037
-    for c in b:
-        h = ((h ^ c) * 1099511628211) & MASK
-    return h ^ 0x9E3779B97F4A7C15
-
-
-def libstdcxx_double_hash(d):
-    # protoCore keys a double by std::hash<double>; this is libstdc++'s
-    # (_Hash_bytes over the 8 bytes, seed 0xc70f6907). On another standard
-    # library the pair found here does not collide, and the checks below
-    # still hold.
-    mul = (0xC6A4A793 << 32) + 0x5BD1E995
-    sm = lambda v: v ^ (v >> 47)
-    data = struct.unpack("<Q", struct.pack("<d", d))[0]
-    h = (0xC70F6907 ^ (8 * mul)) & MASK
-    h ^= (sm((data * mul) & MASK) * mul) & MASK
-    h = (h * mul) & MASK
-    h = (sm(h) * mul) & MASK
-    return sm(h)
+    print("dict_digest_key_collision: no %s twin within %d candidates; skipped"
+          % (what, BOUND))
+    return None
 
 
 class UserHashed:
-    # A user __hash__ is a digest too: 1025 is the key word of the int 1.
+    # A user __hash__ equal to hash(1): the int 1 shares its index.
     def __init__(self, tag):
         self.tag = tag
 
     def __hash__(self):
-        return 1025
+        return hash(1)
 
     def __eq__(self, other):
         return isinstance(other, UserHashed) and other.tag == self.tag
 
 
-st, n_st = find(lambda i: "k" + str(i), hash)
-by, n_by = find(lambda i: b"b" + str(i).encode(), fnv_bytes)
-fl, n_fl = find(lambda i: i + 0.5, libstdcxx_double_hash)
-tu, n_tu = find(lambda i: (i, "t"), hash)
+found = {
+    "str": find("str", lambda i: "k" + str(i)),
+    "bytes": find("bytes", lambda i: b"b" + str(i).encode()),
+    "float": find("float", lambda i: (i + 2) ** 0.5 + 0.1),
+    "tuple": find("tuple", lambda i: (i, "t")),
+}
 uh, n_uh = UserHashed("u"), 1
+assert index_of(hash(uh)) == index_of(hash(n_uh))
 
-PAIRS = [(st, n_st), (by, n_by), (fl, n_fl), (tu, n_tu), (uh, n_uh)]
+PAIRS = [p for p in found.values() if p is not None] + [(uh, n_uh)]
+# The keyword, module and class checks below use the str pair; without one
+# they run on a non-colliding pair (the skip above was reported).
+st, n_st = found["str"] if found["str"] is not None else ("k_none", 12345)
 
 
 def check_pair(k, n):

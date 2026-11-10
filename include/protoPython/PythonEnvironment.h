@@ -169,6 +169,30 @@ public:
     }
 
     /**
+     * @brief The key of keyword argument @p name in protoCore's calling
+     * convention: the interned name's pointer (protoCore
+     * docs/CALLING_CONVENTION.md, rule 3), the key ProtoKeywordArguments::has
+     * and getAt compare and ProtoKeywordArgument::name carries. Never the
+     * content hash: two names with one hash would be one keyword, and a
+     * caller following the convention would never be found. Interned names
+     * are perennial, so the key needs no tracing.
+     */
+    /**
+     * @brief hash() of the int @p intObj (a SmallInteger or a LargeInteger):
+     * its value when it fits a long long, -1 reading -2 as in CPython, else
+     * a digest of its digits. hash() reduces an int that a __hash__ method
+     * returns with it, and dicts and sets index keys by it.
+     */
+    static long long intHashValue(proto::ProtoContext* ctx, const proto::ProtoObject* intObj);
+
+    static proto::proto_ulong kwKey(proto::ProtoContext* ctx, const proto::ProtoString* name) {
+        return reinterpret_cast<proto::proto_ulong>(internName(ctx, name));
+    }
+    static proto::proto_ulong kwKey(proto::ProtoContext* ctx, const proto::ProtoObject* name) {
+        return (name && name->isString(ctx)) ? kwKey(ctx, name->asString(ctx)) : 0;
+    }
+
+    /**
      * @brief A new, collectable `str` object holding @p str.
      *
      * The counterpart of getInternedString() for computed data strings: the
@@ -878,6 +902,9 @@ public:
     const proto::ProtoObject* getAttributeErrorType() const { return attributeErrorType; }
     const proto::ProtoObject* getTuplePrototype() const { return tuplePrototype; }
     const proto::ProtoObject* getDictPrototype()  const { return dictPrototype; }
+    /** The dict_keys, dict_items and dict_values prototypes once built (else
+     *  nullptr), so a view is recognised by a pointer compare. */
+    const proto::ProtoObject* dictViewPrototypes[3] = {nullptr, nullptr, nullptr};
     const proto::ProtoObject* getNameErrorType() const { return nameErrorType; }
     const proto::ProtoObject* getZeroInteger() const { return zeroInteger; }
     const proto::ProtoObject* getOneInteger() const { return oneInteger; }
@@ -1479,14 +1506,15 @@ public:
     static bool sameStringName(proto::ProtoContext* ctx, const proto::ProtoString* a, const proto::ProtoString* b) {
         return a == b || (a && b && sameStringKey(ctx, a->asObject(ctx), b->asObject(ctx)));
     }
+    /** `x in view` for a dict_keys or dict_items view: 1 or 0, an exception
+     *  propagating as raised; -1 when `view` is neither. */
+    static int dictViewMembership(proto::ProtoContext* ctx, const proto::ProtoObject* view,
+                                  const proto::ProtoObject* x);
     /** The keyword arguments of a `**mapping` call taken from a dict object: a sparse list from
-     *  each str key's hash to its value, the form a callee receives keywords in (never a dict's
+     *  each str key's interned name pointer (kwKey) to its value, the form a callee receives keywords in (never a dict's
      *  own storage, whose str slots are buckets). nullptr when `dictObj` keeps no dict storage. */
     static const proto::ProtoSparseList* keywordArgumentsFromDict(proto::ProtoContext* ctx,
                                                                   const proto::ProtoObject* dictObj);
-    /** Calls `fn` with every value stored in `data`, in slot order. */
-    static void forEachDictValue(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
-                                 const std::function<void(const proto::ProtoObject*)>& fn);
     /** @} */
 
     /**
@@ -1575,6 +1603,17 @@ public:
     void pushKwNames(const proto::ProtoTuple* names);
     void popKwNames();
     const proto::ProtoTuple* getCurrentKwNames() const;
+    /**
+     * @brief The keyword arguments of one call in call order.
+     *
+     * The pairs name the keywords (interned names, protoCore's calling
+     * convention), but a call made with a ProtoSparseList (the interpreter's
+     * CALL_KW) gives them in key order. When the keyword-name stack holds
+     * exactly this call's names it supplies the order; otherwise (a call from
+     * C++ or another runtime) the pairs' own order is used.
+     */
+    std::vector<proto::ProtoKeywordArgument> keywordsInCallOrder(proto::ProtoContext* ctx,
+                                                                 const proto::ProtoKeywordArguments* kwargs) const;
 
     /**
      * @brief Collects candidate names for fuzzy matching suggestions.

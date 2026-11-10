@@ -66,7 +66,7 @@ static const proto::ProtoObject* py_reduce(
     const proto::ProtoString* initialS = PythonEnvironment::getInternedString(ctx, "initial");
     const proto::ProtoObject* initialKw = nullptr;
     if (kwc) {
-        const proto::proto_ulong h = initialS->getHash(ctx);
+        const proto::proto_ulong h = PythonEnvironment::kwKey(ctx, initialS);
         if (kwc != 1 || !kwArgs->has(ctx, h)) {
             env->raiseTypeError(ctx, "reduce() got an unexpected keyword argument");
             return nullptr;
@@ -131,7 +131,7 @@ static const proto::ProtoObject* py_cmp_to_key(
     if (!env) return PROTO_NONE;
     const proto::proto_ulong npos = posArgs ? posArgs->getSize(ctx) : 0;
     const proto::proto_ulong nkw = kwargs ? kwargs->getSize(ctx) : 0;
-    const proto::proto_ulong mycmpKey = PythonEnvironment::getInternedString(ctx, "mycmp")->getHash(ctx);
+    const proto::proto_ulong mycmpKey = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "mycmp"));
     const proto::ProtoObject* mycmp = nullptr;
     if (npos + nkw > 1) {
         env->raiseTypeError(ctx, "cmp_to_key() takes at most 1 argument (" + std::to_string(npos + nkw) + " given)");

@@ -3648,19 +3648,14 @@ static const proto::ProtoObject* py_str_call(
         const proto::ProtoString* encKey = PythonEnvironment::getInternedString(ctx, "encoding");
         const proto::ProtoString* errKey = PythonEnvironment::getInternedString(ctx, "errors");
         // CPython: str() accepts only object/encoding/errors keywords.
-        // Walk getCurrentKwNames AND verify the name's hash is actually
-        // in this call's kwArgs (getCurrentKwNames is a thread-local
-        // snapshot that can stay set from an outer call when the
-        // immediate call site received no kwargs).
+        // The call's own pairs name its keywords (interned names).
         PythonEnvironment* envValidator = PythonEnvironment::fromContext(ctx);
-        const proto::ProtoTuple* kwNames = envValidator ? envValidator->getCurrentKwNames() : nullptr;
-        if (kwNames && envValidator) {
-            proto::proto_ulong nk = kwNames->getSize(ctx);
-            for (proto::proto_ulong ki = 0; ki < nk; ++ki) {
-                const proto::ProtoObject* kn = kwNames->getAt(ctx, static_cast<int>(ki));
-                if (!kn || !kn->isString(ctx)) continue;
+        if (envValidator) {
+            const proto::ProtoKeywordArgument* kwPairs = kwArgs->pairs();
+            for (unsigned ki = 0; ki < kwArgs->count(); ++ki) {
+                if (!kwPairs[ki].name) continue;
+                const proto::ProtoObject* kn = kwPairs[ki].name->asObject(ctx);
                 if (kn == objKey->asObject(ctx) || kn == encKey->asObject(ctx) || kn == errKey->asObject(ctx)) continue;
-                if (!kwArgs->has(ctx, kn->asString(ctx)->getHash(ctx))) continue;
                 std::string kname;
                 kn->asString(ctx)->toUTF8String(ctx, kname);
                 envValidator->raiseTypeError(ctx,
@@ -3668,8 +3663,8 @@ static const proto::ProtoObject* py_str_call(
                 return nullptr;
             }
         }
-        if (kwArgs->has(ctx, objKey->getHash(ctx))) {
-            kwObject = kwArgs->getAt(ctx, objKey->getHash(ctx));
+        if (kwArgs->has(ctx, PythonEnvironment::kwKey(ctx, objKey))) {
+            kwObject = kwArgs->getAt(ctx, PythonEnvironment::kwKey(ctx, objKey));
         }
     }
     if ((!posArgs || posArgs->getSize(ctx) <= 1) && !kwObject) {
@@ -3693,11 +3688,11 @@ static const proto::ProtoObject* py_str_call(
                 if (kwArgs) {
                     if (!encoding) {
                         const proto::ProtoString* k = PythonEnvironment::getInternedString(ctx, "encoding");
-                        if (kwArgs->has(ctx, k->getHash(ctx))) encoding = kwArgs->getAt(ctx, k->getHash(ctx));
+                        if (kwArgs->has(ctx, PythonEnvironment::kwKey(ctx, k))) encoding = kwArgs->getAt(ctx, PythonEnvironment::kwKey(ctx, k));
                     }
                     if (!errors) {
                         const proto::ProtoString* k = PythonEnvironment::getInternedString(ctx, "errors");
-                        if (kwArgs->has(ctx, k->getHash(ctx))) errors = kwArgs->getAt(ctx, k->getHash(ctx));
+                        if (kwArgs->has(ctx, PythonEnvironment::kwKey(ctx, k))) errors = kwArgs->getAt(ctx, PythonEnvironment::kwKey(ctx, k));
                     }
                 }
                 if (encoding || errors) {
@@ -4595,6 +4590,8 @@ static const proto::ProtoObject* py_list_contains(
     return PROTO_FALSE;
 }
 
+static bool isDictView(proto::ProtoContext* context, const proto::ProtoObject* obj);
+
 static const proto::ProtoObject* py_list_eq(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4617,8 +4614,10 @@ static const proto::ProtoObject* py_list_eq(
     // below returns null because the class object has no list payload, and
     // we'd return False — incorrect for `list == list`.
     if (receiver == other) return PROTO_TRUE;
-    // A tuple keeps its items in a ProtoList too: it is still not a list.
-    if (PythonEnvironment::isTupleValue(context, receiver) || PythonEnvironment::isTupleValue(context, other))
+    // A tuple keeps its items in a ProtoList too: it is still not a list;
+    // nor is a dict view, whose snapshot is a ProtoList.
+    if (PythonEnvironment::isTupleValue(context, receiver) || PythonEnvironment::isTupleValue(context, other)
+        || isDictView(context, receiver) || isDictView(context, other))
         return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
     const proto::ProtoObject* data = receiver ? receiver->getAttribute(context, dataName) : nullptr;
     const proto::ProtoObject* otherData = (other && other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
@@ -4830,21 +4829,78 @@ static bool bytes_data_view(proto::ProtoContext* context, const proto::ProtoObje
 static const proto::ProtoObject* py_bytes_hash(proto::ProtoContext*, const proto::ProtoObject*,
     const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
 
-// The key hash of a bytes object (or of a bytes subclass that keeps
-// bytes.__hash__): its content's.  A bytes object is a wrapper cell whose
-// protoCore hash is the cell's, so b"a" and bytes([97]) were two keys.  The
-// content hash is salted: a dict or set keys by hash alone, and
-// hash(b"a") == hash("a") (as in CPython) must not make them one key.
-static bool bytesKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key, proto::proto_ulong& out) {
-    std::string raw;
-    if (!bytes_data_view(context, key, raw)) return false;
+// hash() of a bytes value: FNV-1a over its content (-1 reads -2, as in
+// CPython). A bytes object is a wrapper cell whose protoCore hash is the
+// cell's, so the content is hashed here: b"a" and bytes([97]) are one key.
+static long long bytesContentPyHash(const std::string& raw) {
     proto::proto_ulong h = PROTO_UL(14695981039346656037);
     for (unsigned char c : raw) {
         h ^= c;
         h *= PROTO_UL(1099511628211);
     }
-    out = h ^ PROTO_UL(0x9e3779b97f4a7c15);
+    const long long sh = static_cast<long long>(h);
+    return sh == -1 ? -2 : sh;
+}
+
+static bool bytesKeyHash(proto::ProtoContext* context, const proto::ProtoObject* key, long long& out) {
+    std::string raw;
+    if (!bytes_data_view(context, key, raw)) return false;
+    out = bytesContentPyHash(raw);
     return true;
+}
+
+// hash() of a non-integral float other than NaN: its IEEE 754 bit pattern
+// (-1 reads -2).
+static long long floatBitsPyHash(double v) {
+    union { double d; unsigned long long u; } pun;
+    pun.d = v;
+    const long long h = static_cast<long long>(pun.u);
+    return h == -1 ? -2 : h;
+}
+
+// hash() of an int value (a SmallInteger or a LargeInteger): the value when
+// it fits a long long (-1 reads -2, as in CPython), else FNV-1a over its hex
+// digits.
+static long long intPyHash(proto::ProtoContext* context, const proto::ProtoObject* intObj) {
+    if (proto::isSmallInt(intObj)) {
+        const long long v = proto::asSmallInt(intObj);
+        return v == -1 ? -2 : v;
+    }
+    try {
+        const long long v = intObj->asLong(context);
+        return v == -1 ? -2 : v;
+    } catch (const proto::ProtoException& overflow) {
+        PythonEnvironment::rethrowUnlessOverflow(context, overflow);
+    }
+    const proto::ProtoString* s = intObj->asIntegerString(context, 16);
+    std::string digits;
+    s->toUTF8String(context, digits);
+    unsigned long long h = 14695981039346656037ULL;
+    for (char c : digits) {
+        h ^= static_cast<unsigned long long>(static_cast<unsigned char>(c));
+        h *= 1099511628211ULL;
+    }
+    const long long sh = static_cast<long long>(h);
+    return sh == -1 ? -2 : sh;
+}
+
+long long PythonEnvironment::intHashValue(proto::ProtoContext* ctx, const proto::ProtoObject* intObj) {
+    return intPyHash(ctx, intObj);
+}
+
+// The index a dict or set files a key under, from the key's Python hash
+// value `h` (what hash(key) returns): the tagged word of the SmallInteger h
+// when h fits one, else h itself. One rule for every key type, so keys that
+// hash alike in Python share an index whatever their types: an object whose
+// __hash__ returns hash(5) and that equals 5 finds the key 5. For an int n
+// other than -1 the index is n's own tagged word, which is what makes a
+// SmallInteger key exact (see keyHashOf).
+static inline proto::proto_ulong embeddedKeyWordOfInt(long long v) {
+    return static_cast<proto::proto_ulong>(reinterpret_cast<uintptr_t>(proto::makeSmallInt(v)));
+}
+
+static inline proto::proto_ulong hashIndex(long long h) {
+    return proto::smallIntInRange(h) ? embeddedKeyWordOfInt(h) : static_cast<proto::proto_ulong>(h);
 }
 
 // The hash of a NaN float object: CPython 3.10+ hashes NaN by identity, so
@@ -4856,8 +4912,8 @@ static proto::proto_ulong nanIdentityHash(const proto::ProtoObject* obj) {
     return static_cast<proto::proto_ulong>(reinterpret_cast<std::uintptr_t>(obj) >> 6);
 }
 
-// hash((1, 2)) == hash((1.0, 2)): the elements are keyed like dict keys and
-// mixed the way ProtoTupleImplementation::getHash mixes element hashes
+// hash((1, 2)) == hash((1.0, 2)): the elements' indices (hashIndex of their
+// Python hash; an int's is its tagged word) are mixed the way ProtoTupleImplementation::getHash mixes element hashes
 // (protoCore 3.5.1, commit 4d8e4876: CPython's tuple hash, the xxHash round of
 // Objects/tupleobject.c), so a tuple of ints and strings keeps the hash
 // protoCore gives it. Keep the two in step. The mix used before,
@@ -4894,61 +4950,64 @@ static inline proto::proto_ulong embeddedKeyWord(const proto::ProtoObject* o) {
     return static_cast<proto::proto_ulong>(reinterpret_cast<uintptr_t>(o));
 }
 
-// The hash a dict or a set stores `key` under. Python makes 1 == 1.0 == True
-// (and 2**70 == 2.0**70) the same key, while protoCore hashes a bool, a double
-// and an int by their own representation: bool and integral floats are keyed
-// as the int they equal, tuples by their elements, and a class's own __hash__
-// is honoured. An unhashable key (type(key).__hash__ is None) or a raising
-// __hash__ makes it return false with the exception pending; with
-// raiseUnhashable false (dicts) such a key falls back to its protoCore hash.
-//
-// `exact`, when given, is cleared unless the hash *is* the key: the tagged
-// word of an embedded int (a SmallInteger, or the int a bool or an integral
-// float equals) or of None, which protoCore hashes as the word itself. Such a
-// hash is injective and decodes back to the key, so a dict stores the value
-// alone under it and a lookup needs no comparison. Every other hash may be
-// shared by an unequal key, whatever its type: a class's own __hash__, the
-// digests of str (FNV-1a), bytes (salted FNV-1a), LargeInteger, a
-// non-integral float, a tuple or a frozenset, the identity hash of
-// object.__hash__ (its address >> 4) and a NaN's; any of these can equal
-// another key's hash, including an int's word. With allowUserCode false no
-// Python __hash__ runs: such a key makes the function return false with
-// nothing pending.
-static bool keyHashOf(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, proto::proto_ulong& out,
-                      bool& injective, bool allowUserCode) {
-    out = 0;
-    injective = false;
+// The Python hash value of `key`, the value hash(key) returns, computed
+// natively for the built-in types: 1 == 1.0 == True (and 2**70 == 2.0**70)
+// hash alike, a tuple by its elements, a frozenset by its elements, and a
+// class's own __hash__ is honoured. `asInt` receives the int object the key
+// equals when it is an int, a bool or an integral float (else nullptr). An
+// unhashable key (type(key).__hash__ is None) or a raising __hash__ makes it
+// return false with the exception pending; with raiseUnhashable false (dicts)
+// such a key falls back to its protoCore hash. With allowUserCode false no
+// Python __hash__ runs: such a key makes it return false with nothing pending.
+static bool keyPyHash(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, long long& ph,
+                      const proto::ProtoObject*& asInt, bool allowUserCode) {
+    ph = 0;
+    asInt = nullptr;
     if (!key) return true;
     // A str value (inline, heap or interned) hashes by its content.
-    if (proto::ProtoObject::isStringTagFast(key)) { out = key->getHash(context); return true; }
-    if (key == PROTO_TRUE || key == PROTO_FALSE) {
-        out = embeddedKeyWord(context->fromInteger(key == PROTO_TRUE ? 1 : 0));
-        injective = true;
+    if (proto::ProtoObject::isStringTagFast(key)) { ph = static_cast<long long>(key->getHash(context)); return true; }
+    if (proto::isSmallInt(key)) {
+        asInt = key;
+        ph = intPyHash(context, key);
         return true;
     }
+    if (key == PROTO_TRUE || key == PROTO_FALSE) {
+        ph = key == PROTO_TRUE ? 1 : 0;
+        asInt = proto::makeSmallInt(ph);
+        return true;
+    }
+    // object.__hash__ of None, as hash(None) answers it.
+    if (key == PROTO_NONE) { ph = static_cast<long long>(embeddedKeyWord(key) >> 4); return true; }
     if (key->isFloat(context)) {
         const double v = key->asDouble(context);
         if (std::isfinite(v) && v == std::trunc(v)) {
-            const proto::ProtoObject* i = integralDoubleToInt(context, v);
-            out = i->getHash(context);
-            injective = isEmbeddedKey(i);
+            asInt = integralDoubleToInt(context, v);
+            ph = intPyHash(context, asInt);
             return true;
         }
         // protoCore hashes a double by its bits, which made every NaN the
         // same key: {float('nan'), float('nan')} had one element.
-        if (std::isnan(v)) {
-            out = nanIdentityHash(key);
-            return true;
-        }
+        ph = std::isnan(v) ? static_cast<long long>(nanIdentityHash(key)) : floatBitsPyHash(v);
+        return true;
+    }
+    if (key->isInteger(context)) {
+        asInt = key;
+        ph = intPyHash(context, key);
+        return true;
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
         const proto::ProtoObject* cls = env->getType(context, key);
         if (cls == env->getTuplePrototype()) {
             const TupleView t = PythonEnvironment::tupleView(context, key);
-            if (t) return tupleKeyHash(context, t, raiseUnhashable, out, allowUserCode);
+            proto::proto_ulong th = 0;
+            if (t) {
+                if (!tupleKeyHash(context, t, raiseUnhashable, th, allowUserCode)) return false;
+                ph = static_cast<long long>(th);
+                return true;
+            }
         }
-        if (cls == env->getBytesPrototype() && bytesKeyHash(context, key, out)) return true;
+        if (cls == env->getBytesPrototype() && bytesKeyHash(context, key, ph)) return true;
         // The other built-in primitives keep protoCore's value-based hash.
         bool isPrimitive = (cls == env->getStrPrototype()
             || cls == env->getIntPrototype()
@@ -4972,7 +5031,7 @@ static bool keyHashOf(proto::ProtoContext* context, const proto::ProtoObject* ke
             }
             if (hM && hM != PROTO_NONE) {
                 const proto::ProtoMethod m = hM->asMethod(context);
-                if (m == py_bytes_hash && bytesKeyHash(context, key, out)) return true;
+                if (m == py_bytes_hash && bytesKeyHash(context, key, ph)) return true;
                 if (m == py_int_hash || m == py_float_hash || m == py_str_hash || m == py_tuple_hash) {
                     // A subclass of int, float, str or tuple that keeps the
                     // built-in __hash__ is keyed by its value: MyInt(3) finds 3.
@@ -4980,17 +5039,25 @@ static bool keyHashOf(proto::ProtoContext* context, const proto::ProtoObject* ke
                     // by its items, as a tuple.
                     if (m == py_tuple_hash) {
                         const TupleView tv = PythonEnvironment::tupleView(context, key);
-                        if (tv) return tupleKeyHash(context, tv, raiseUnhashable, out, allowUserCode);
+                        if (tv) {
+                            proto::proto_ulong th = 0;
+                            if (!tupleKeyHash(context, tv, raiseUnhashable, th, allowUserCode)) return false;
+                            ph = static_cast<long long>(th);
+                            return true;
+                        }
                     }
                     const proto::ProtoObject* data = key->getAttribute(context, env->getDataString());
                     if (data && data != key) {
                         // A NaN payload is keyed by the instance itself, as
                         // hash() does, not by a payload instances may share.
                         if (data->isFloat(context) && std::isnan(data->asDouble(context))) {
-                            out = nanIdentityHash(key);
+                            ph = static_cast<long long>(nanIdentityHash(key));
                             return true;
                         }
-                        return keyHashOf(context, data, raiseUnhashable, out, injective, allowUserCode);
+                        // The payload's hash; the instance is not the
+                        // payload, so it is never exact.
+                        const proto::ProtoObject* ignored = nullptr;
+                        return keyPyHash(context, data, raiseUnhashable, ph, ignored, allowUserCode);
                     }
                 }
                 const proto::ProtoObject* res = nullptr;
@@ -5005,12 +5072,8 @@ static bool keyHashOf(proto::ProtoContext* context, const proto::ProtoObject* ke
                     }
                 }
                 if (res && res->isInteger(context)) {
-                    try {
-                        out = static_cast<proto::proto_ulong>(res->asLong(context));
-                    } catch (const proto::ProtoException& overflow) {
-                        PythonEnvironment::rethrowUnlessOverflow(context, overflow);
-                        out = res->getHash(context);
-                    }
+                    // As hash() reduces it: an int result hashes as that int.
+                    ph = intPyHash(context, res);
                     return true;
                 }
             }
@@ -5018,10 +5081,33 @@ static bool keyHashOf(proto::ProtoContext* context, const proto::ProtoObject* ke
     }
     if (key->isString(context)) {
         const proto::ProtoString* s = key->asString(context);
-        if (s) { out = s->getHash(context); return true; }
+        if (s) { ph = static_cast<long long>(s->getHash(context)); return true; }
     }
-    out = key->getHash(context);
-    injective = isEmbeddedKey(key) && out == embeddedKeyWord(key);
+    ph = static_cast<long long>(key->getHash(context));
+    return true;
+}
+
+// The index a dict or a set stores `key` under: hashIndex of its Python hash.
+//
+// `injective` is set when the index *is* the key: the key equals a
+// SmallInteger n (an int, a bool or an integral float) whose index is n's
+// own tagged word, that is every such n but -1 (hash(-1) == -2). Such an
+// index decodes back to the key, so a dict stores the value alone under it
+// and a lookup needs no comparison. Every other index may be shared by an
+// unequal key, whatever its type: a class's own __hash__, the digests of str
+// (FNV-1a), bytes (FNV-1a), LargeInteger, a non-integral float, a tuple or a
+// frozenset, the identity hash of object.__hash__ (its address >> 4, None's
+// included) and a NaN's; any of these can equal another key's index,
+// including an int's word.
+static bool keyHashOf(proto::ProtoContext* context, const proto::ProtoObject* key, bool raiseUnhashable, proto::proto_ulong& out,
+                      bool& injective, bool allowUserCode) {
+    long long ph = 0;
+    const proto::ProtoObject* asInt = nullptr;
+    out = 0;
+    injective = false;
+    if (!keyPyHash(context, key, raiseUnhashable, ph, asInt, allowUserCode)) return false;
+    out = hashIndex(ph);
+    injective = asInt && proto::isSmallInt(asInt) && out == embeddedKeyWord(asInt);
     return true;
 }
 
@@ -5054,7 +5140,9 @@ static proto::proto_ulong dictKeyHash(proto::ProtoContext* context, const proto:
 //    kept and every hit is confirmed: by identity, then with __eq__, as
 //    CPython compares keys of equal hash. An exact key sits in a bucket under
 //    its canonical object, the word its index decodes to.
-// A ProtoMap is never a Python value, so a bucket is recognised by its tag.
+// A raw ProtoMap is never a Python value (a Python object wraps its storage
+// in a cell of its own), so a bucket is recognised by its pointer tag alone,
+// with no attribute lookup (dictBucket).
 // `__keys__` lists every stored key in insertion order.
 //
 // Code outside this file reads and writes dict storage through
@@ -5073,8 +5161,19 @@ static bool dictKeyResolve(proto::ProtoContext* context, const proto::ProtoObjec
     return keyHash(context, key, raiseUnhashable, dk.hash, &dk.exact);
 }
 
-static inline const proto::ProtoMap* dictBucket(proto::ProtoContext* context, const proto::ProtoObject* slot) {
-    return slot ? slot->asMap(context) : nullptr;
+// protoCore's pointer tag of a ProtoMap handle (POINTER_TAG_MAP in
+// proto_internal.h, not a public header). TestExecutionEngine's
+// DictBucketTagMatchesProtoMap checks it against a real ProtoMap.
+static constexpr uintptr_t kProtoMapPointerTag = 27;
+static constexpr uintptr_t kPointerTagMask = 0x3F;
+static_assert(kProtoMapPointerTag <= kPointerTagMask, "pointer tags are 6 bits");
+
+// The bucket stored in `slot`, or nullptr when the slot holds a value. A tag
+// test: ProtoObject::asMap would also answer the map an object keeps in its
+// `__data__`, taking a value for a bucket.
+static inline const proto::ProtoMap* dictBucket(proto::ProtoContext*, const proto::ProtoObject* slot) {
+    return (reinterpret_cast<uintptr_t>(slot) & kPointerTagMask) == kProtoMapPointerTag
+        ? reinterpret_cast<const proto::ProtoMap*>(slot) : nullptr;
 }
 
 // The key an exact hash stands for: the embedded word itself.
@@ -5089,7 +5188,8 @@ static inline const proto::ProtoObject* dictBucketKey(const DictKey& dk) {
 }
 
 // The stored key of `bucket` equal to `dk`: the same object, else the first
-// one __eq__ accepts; nullptr if none.
+// one whose __eq__ accepts it (stored == key, the order CPython compares a
+// dict's keys in); nullptr if none.
 static const proto::ProtoObject* dictBucketMatch(proto::ProtoContext* context, const proto::ProtoMap* bucket,
                                                  const DictKey& dk) {
     const proto::ProtoObject* bk = dictBucketKey(dk);
@@ -5098,7 +5198,7 @@ static const proto::ProtoObject* dictBucketMatch(proto::ProtoContext* context, c
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     for (const proto::ProtoMapIterator* it = bucket->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
         const proto::ProtoObject* stored = it->nextKey(context);
-        if (env && env->objectsEqual(context, dk.key, stored)) return stored;
+        if (env && env->objectsEqual(context, stored, dk.key)) return stored;
     }
     return nullptr;
 }
@@ -5110,7 +5210,7 @@ static bool dictSlotMatches(proto::ProtoContext* context, const DictKey& dk) {
     const proto::ProtoObject* occupant = dictWordKey(dk.hash);
     if (!isEmbeddedKey(occupant)) return false;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    return env && env->objectsEqual(context, dk.key, occupant);
+    return env && env->objectsEqual(context, occupant, dk.key);
 }
 
 // The value stored for `dk` (nullptr if absent); `stored` receives the key
@@ -5174,8 +5274,34 @@ static const proto::ProtoSparseList* dictRemove(proto::ProtoContext* context, co
     return data->removeAt(context, dk.hash);
 }
 
+// The value in `bucket` of a stored key with the content of the str or bytes
+// `key` (built-in equality, no user code); nullptr if none or if `key` is
+// neither.
+static const proto::ProtoObject* dictBucketContentMatch(proto::ProtoContext* context, const proto::ProtoMap* bucket,
+                                                        const proto::ProtoObject* key) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const bool isStr = proto::ProtoObject::isStringTagFast(key);
+    const bool isBytes = !isStr && env && env->getType(context, key) == env->getBytesPrototype();
+    if (!isStr && !isBytes) return nullptr;
+    std::string raw;
+    if (isBytes && !bytes_data_view(context, key, raw)) return nullptr;
+    for (const proto::ProtoMapIterator* it = bucket->getIterator(context); it && it->hasNext(context); it = it->advance(context)) {
+        const proto::ProtoObject* stored = it->nextKey(context);
+        if (isStr) {
+            if (proto::ProtoObject::isStringTagFast(stored) && PythonEnvironment::sameStringKey(context, stored, key))
+                return bucket->getAt(context, stored);
+        } else if (env->getType(context, stored) == env->getBytesPrototype()) {
+            std::string other;
+            if (bytes_data_view(context, stored, other) && other == raw) return bucket->getAt(context, stored);
+        }
+    }
+    return nullptr;
+}
+
 // The value of a key object taken from `__keys__`; nullptr if absent. No
-// __eq__ runs: the key is found by identity, or by its canonical word.
+// __eq__ runs: the key is found by identity, or by its canonical word, and a
+// str or bytes key, failing those, by content (another equal object may be
+// the one stored, as when `__keys__` and the storage were written apart).
 static const proto::ProtoObject* dictStoredValue(proto::ProtoContext* context, const proto::ProtoSparseList* data,
                                                  const proto::ProtoObject* storedKey) {
     if (!data || !storedKey) return nullptr;
@@ -5186,7 +5312,8 @@ static const proto::ProtoObject* dictStoredValue(proto::ProtoContext* context, c
     if (const proto::ProtoMap* bucket = dictBucket(context, slot)) {
         const proto::ProtoObject* bk = dictBucketKey(dk);
         if (bucket->has(context, bk)) return bucket->getAt(context, bk);
-        return bucket->has(context, storedKey) ? bucket->getAt(context, storedKey) : nullptr;
+        if (bucket->has(context, storedKey)) return bucket->getAt(context, storedKey);
+        return dictBucketContentMatch(context, bucket, storedKey);
     }
     return dk.exact ? slot : nullptr;
 }
@@ -5333,7 +5460,7 @@ const proto::ProtoSparseList* PythonEnvironment::keywordArgumentsFromDict(proto:
             if (!bucket) continue;
             for (const proto::ProtoMapIterator* b = bucket->getIterator(ctx); b && b->hasNext(ctx); b = b->advance(ctx)) {
                 const proto::ProtoObject* k = b->nextKey(ctx);
-                if (k && k->isString(ctx)) out = out->setAt(ctx, k->asString(ctx)->getHash(ctx), bucket->getAt(ctx, k));
+                if (k && k->isString(ctx)) out = out->setAt(ctx, PythonEnvironment::kwKey(ctx, k->asString(ctx)), bucket->getAt(ctx, k));
             }
         }
         return out;
@@ -5343,7 +5470,7 @@ const proto::ProtoSparseList* PythonEnvironment::keywordArgumentsFromDict(proto:
         const proto::ProtoObject* k = keys->getAt(ctx, static_cast<int>(i));
         if (!k || !k->isString(ctx)) continue;
         const proto::ProtoObject* v = dictStoredValue(ctx, data, k);
-        if (v) out = out->setAt(ctx, k->asString(ctx)->getHash(ctx), v);
+        if (v) out = out->setAt(ctx, PythonEnvironment::kwKey(ctx, k->asString(ctx)), v);
     }
     return out;
 }
@@ -5352,22 +5479,6 @@ bool PythonEnvironment::sameStringKey(proto::ProtoContext* ctx, const proto::Pro
     if (k == name) return true;
     if (!k || !name || !k->isString(ctx) || !name->isString(ctx)) return false;
     return k->getHash(ctx) == name->getHash(ctx) && k->compare(ctx, name) == 0;
-}
-
-void PythonEnvironment::forEachDictValue(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
-                                         const std::function<void(const proto::ProtoObject*)>& fn) {
-    if (!data) return;
-    for (const proto::ProtoSparseListIterator* it = data->getIterator(ctx); it && it->hasNext(ctx);
-         it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx)) {
-        const proto::ProtoObject* slot = it->nextValue(ctx);
-        if (const proto::ProtoMap* bucket = dictBucket(ctx, slot)) {
-            for (const proto::ProtoMapIterator* b = bucket->getIterator(ctx); b && b->hasNext(ctx); b = b->advance(ctx)) {
-                fn(bucket->getAt(ctx, b->nextKey(ctx)));
-            }
-        } else {
-            fn(slot);
-        }
-    }
 }
 
 bool PythonEnvironment::hashKey(proto::ProtoContext* ctx, const proto::ProtoObject* value, proto::proto_ulong& hash) {
@@ -5586,7 +5697,7 @@ static bool setLookupKey(proto::ProtoContext* context, const proto::ProtoObject*
         const proto::ProtoObject* cls = data ? env->getType(context, value) : nullptr;
         if (cls && env->getAttribute(context, cls, env->getHashString(), false) == PROTO_NONE) {
             dk.key = value;
-            dk.hash = frozensetKeyHash(context, data);
+            dk.hash = hashIndex(static_cast<long long>(frozensetKeyHash(context, data)));
             dk.exact = false;
             return true;
         }
@@ -6779,12 +6890,12 @@ static const proto::ProtoObject* py_list_sort(
     const proto::ProtoObject* keyFn = nullptr;
     bool reverse = false;
     if (env && keywordParameters) {
-        proto::proto_ulong keyH = PythonEnvironment::getInternedString(context, "key")->getHash(context);
+        proto::proto_ulong keyH = PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, "key"));
         if (keywordParameters->has(context, keyH)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, keyH);
             if (v && v != PROTO_NONE) keyFn = v;
         }
-        proto::proto_ulong revH = PythonEnvironment::getInternedString(context, "reverse")->getHash(context);
+        proto::proto_ulong revH = PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, "reverse"));
         if (keywordParameters->has(context, revH)) {
             const proto::ProtoObject* v = keywordParameters->getAt(context, revH);
             if (v && v->isBoolean(context)) reverse = v->asBoolean(context);
@@ -8500,19 +8611,13 @@ static const proto::ProtoObject* py_dict_call(
         }
     }
 
-    const proto::ProtoTuple* kwNames = env ? env->getCurrentKwNames() : nullptr;
-    if (kwNames && keywordParameters) {
-        proto::proto_ulong sz = kwNames->getSize(context);
-        for (proto::proto_ulong i = 0; i < sz; ++i) {
-            const proto::ProtoObject* keyObj = kwNames->getAt(context, static_cast<int>(i));
-            if (keyObj && keyObj) {
-                const proto::ProtoString* ks = keyObj->asString(context);
-                proto::proto_ulong hash = ks->getHash(context);
-                // Only add if the key is actually present in keywordParameters.
-                // getCurrentKwNames() may be non-null due to an enclosing CALL_FUNCTION_KW
-                // (e.g. f(x, kw=val) calling dict(pairs) internally), causing spurious entries.
-                if (!keywordParameters->has(context, hash)) continue;
-                const proto::ProtoObject* val = keywordParameters->getAt(context, hash);
+    // dict(**kw): the call's keywords, in call order, name the keys.
+    if (keywordParameters && env) {
+        const std::vector<proto::ProtoKeywordArgument> kwPairs = env->keywordsInCallOrder(context, keywordParameters);
+        for (size_t i = 0; i < kwPairs.size(); ++i) {
+            if (kwPairs[i].name) {
+                const proto::ProtoObject* keyObj = kwPairs[i].name->asObject(context);
+                const proto::ProtoObject* val = kwPairs[i].value;
                 const proto::ProtoSparseList* nd = d;
                 const proto::ProtoList* nk = keysList;
                 dictStore(context, nd, nk, keyObj, val ? val : PROTO_NONE);
@@ -10764,12 +10869,8 @@ static const proto::ProtoObject* py_float_hash(
     if (std::isfinite(v) && v == std::trunc(v)) {
         return py_int_hash(context, integralDoubleToInt(context, v), nullptr, nullptr, nullptr);
     }
-    // Non-integer: hash from the IEEE 754 bit pattern with a small tweak.
-    union { double d; unsigned long long u; } pun;
-    pun.d = v;
-    long long h = static_cast<long long>(pun.u);
-    if (h == -1) h = -2;
-    return context->fromInteger(h);
+    // Non-integer: hash from the IEEE 754 bit pattern.
+    return context->fromInteger(floatBitsPyHash(v));
 }
 
 static const proto::ProtoObject* py_int_hash(
@@ -10785,31 +10886,7 @@ static const proto::ProtoObject* py_int_hash(
         if (data && data->isInteger(context)) intObj = data;
     }
     if (!intObj) return context->fromInteger(0);
-    // Fast path: SmallInteger fits in long long — hash is the value itself
-    // (CPython matches int's value when it fits).
-    try {
-        long long v = intObj->asLong(context);
-        // CPython: hash(-1) == -2 to keep -1 reserved as the error marker.
-        if (v == -1) return context->fromInteger(-2);
-        return context->fromInteger(v);
-    } catch (const proto::ProtoException& overflow) {
-        PythonEnvironment::rethrowUnlessOverflow(context, overflow);
-        // Bignum: hash via its digits modulo a large prime.  This keeps
-        // `hash(n) == hash(n)` stable without overflowing long long.
-        // Use Python's PyHASH_MODULUS (2^61 - 1) equivalent simplified:
-        // fold the decimal digit string through FNV-1a.
-        const proto::ProtoString* s = intObj->asIntegerString(context, 16);
-        std::string digits;
-        s->toUTF8String(context, digits);
-        unsigned long long h = 14695981039346656037ULL; // FNV-1a offset
-        for (char c : digits) {
-            h ^= static_cast<unsigned long long>(static_cast<unsigned char>(c));
-            h *= 1099511628211ULL; // FNV-1a prime
-        }
-        long long signed_h = static_cast<long long>(h);
-        if (signed_h == -1) signed_h = -2;
-        return context->fromInteger(signed_h);
-    }
+    return context->fromInteger(intPyHash(context, intObj));
 }
 
 // --- Bytes backing-store helpers (Y-round) ---------------------------------
@@ -10976,8 +11053,8 @@ static const proto::ProtoObject* py_int_from_bytes(
         if (bo && bo->isString(context)) bo->asString(context)->toUTF8String(context, byteorderStr);
     } else if (kw) {
         const proto::ProtoString* bs = PythonEnvironment::getInternalString(context, "byteorder");
-        if (bs && kw->has(context, bs->getHash(context))) {
-            const proto::ProtoObject* bo = kw->getAt(context, bs->getHash(context));
+        if (bs && kw->has(context, PythonEnvironment::kwKey(context, bs))) {
+            const proto::ProtoObject* bo = kw->getAt(context, PythonEnvironment::kwKey(context, bs));
             if (bo && bo->isString(context)) bo->asString(context)->toUTF8String(context, byteorderStr);
         }
     }
@@ -10990,8 +11067,8 @@ static const proto::ProtoObject* py_int_from_bytes(
     bool isSigned = false;
     if (kw) {
         const proto::ProtoString* ss = PythonEnvironment::getInternalString(context, "signed");
-        if (ss && kw->has(context, ss->getHash(context))) {
-            const proto::ProtoObject* sv = kw->getAt(context, ss->getHash(context));
+        if (ss && kw->has(context, PythonEnvironment::kwKey(context, ss))) {
+            const proto::ProtoObject* sv = kw->getAt(context, PythonEnvironment::kwKey(context, ss));
             if (sv == PROTO_TRUE) isSigned = true;
             else if (sv && sv->isInteger(context)) isSigned = (sv->asLong(context) != 0);
         }
@@ -11039,8 +11116,8 @@ static const proto::ProtoObject* py_int_to_bytes(
         if (bo && bo->isString(context)) bo->asString(context)->toUTF8String(context, byteorderStr);
     } else if (kw) {
         const proto::ProtoString* bs = PythonEnvironment::getInternalString(context, "byteorder");
-        if (bs && kw->has(context, bs->getHash(context))) {
-            const proto::ProtoObject* bo = kw->getAt(context, bs->getHash(context));
+        if (bs && kw->has(context, PythonEnvironment::kwKey(context, bs))) {
+            const proto::ProtoObject* bo = kw->getAt(context, PythonEnvironment::kwKey(context, bs));
             if (bo && bo->isString(context)) bo->asString(context)->toUTF8String(context, byteorderStr);
         }
     }
@@ -11052,8 +11129,8 @@ static const proto::ProtoObject* py_int_to_bytes(
     bool isSigned = false;
     if (kw) {
         const proto::ProtoString* ss = PythonEnvironment::getInternalString(context, "signed");
-        if (ss && kw->has(context, ss->getHash(context))) {
-            const proto::ProtoObject* sv = kw->getAt(context, ss->getHash(context));
+        if (ss && kw->has(context, PythonEnvironment::kwKey(context, ss))) {
+            const proto::ProtoObject* sv = kw->getAt(context, PythonEnvironment::kwKey(context, ss));
             if (sv == PROTO_TRUE) isSigned = true;
             else if (sv && sv->isInteger(context)) isSigned = (sv->asLong(context) != 0);
         }
@@ -11757,8 +11834,8 @@ static const proto::ProtoObject* py_str_encode(
     // Also honour encoding= kwarg.
     if (keywordParameters && keywordParameters->getSize(context) > 0 && encoding == "utf-8") {
         const proto::ProtoString* encS = PythonEnvironment::getInternedString(context, "encoding");
-        if (keywordParameters->has(context, encS->getHash(context))) {
-            const proto::ProtoObject* v = keywordParameters->getAt(context, encS->getHash(context));
+        if (keywordParameters->has(context, PythonEnvironment::kwKey(context, encS))) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, encS));
             if (v && v->isString(context)) {
                 v->asString(context)->toUTF8String(context, encoding);
             } else if (v && v != PROTO_NONE) {
@@ -11796,8 +11873,8 @@ static const proto::ProtoObject* py_str_encode(
     }
     if (keywordParameters && keywordParameters->getSize(context) > 0) {
         const proto::ProtoString* eS = PythonEnvironment::getInternedString(context, "errors");
-        if (keywordParameters->has(context, eS->getHash(context))) {
-            const proto::ProtoObject* v = keywordParameters->getAt(context, eS->getHash(context));
+        if (keywordParameters->has(context, PythonEnvironment::kwKey(context, eS))) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, eS));
             if (v && v->isString(context)) v->asString(context)->toUTF8String(context, errorsArg);
         }
     }
@@ -12393,15 +12470,7 @@ static const proto::ProtoObject* py_bytes_hash(
     const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
     std::string raw;
     if (!bytes_data_view(context, self, raw)) return context->fromInteger(0);
-    // FNV-1a 64-bit; fits in long long when reinterpreted.
-    unsigned long long h = 14695981039346656037ULL;
-    for (unsigned char c : raw) {
-        h ^= static_cast<unsigned long long>(c);
-        h *= 1099511628211ULL;
-    }
-    long long sh = static_cast<long long>(h);
-    if (sh == -1) sh = -2;  // CPython convention
-    return context->fromInteger(sh);
+    return context->fromInteger(bytesContentPyHash(raw));
 }
 
 static const proto::ProtoObject* py_bytes_hex(
@@ -12548,7 +12617,7 @@ static const proto::ProtoObject* py_bytes_translate(
     } else if (kwargs) {
         const proto::ProtoString* delS =
             PythonEnvironment::getInternedString(context, "delete");
-        delObj = kwargs->getAt(context, delS->getHash(context));
+        delObj = kwargs->getAt(context, PythonEnvironment::kwKey(context, delS));
     }
     if (delObj && delObj != PROTO_NONE) {
         bytes_view(context, delObj, del_str);
@@ -13111,11 +13180,10 @@ static const proto::ProtoObject* py_bytes_split(
         if (!readMaxsplit(posArgs->getAt(context, 1))) return nullptr;
     }
     if (kwargs && kwargs->getSize(context) > 0) {
-        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();
-        if (kwNames) {
+        {
             const proto::ProtoString* msKey =
                 PythonEnvironment::getInternedString(context, "maxsplit");
-            proto::proto_ulong hash = msKey->getHash(context);
+            proto::proto_ulong hash = PythonEnvironment::kwKey(context, msKey);
             if (kwargs->has(context, hash)) {
                 if (!readMaxsplit(kwargs->getAt(context, hash))) return nullptr;
             }
@@ -14158,8 +14226,8 @@ static const proto::ProtoObject* py_str_format(
                 const proto::ProtoString* keyS = PythonEnvironment::getInternedString(context, baseName.c_str());
                 // getAt answers PROTO_NONE for an absent key; has() tells it
                 // from an argument whose value is None.
-                if (keywordParameters->has(context, keyS->getHash(context)))
-                    found = keywordParameters->getAt(context, keyS->getHash(context));
+                if (keywordParameters->has(context, PythonEnvironment::kwKey(context, keyS)))
+                    found = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, keyS));
             }
             if (!found) {
                 if (env) env->raiseKeyError(context, PythonEnvironment::newStr(context, baseName));
@@ -14971,17 +15039,16 @@ static const proto::ProtoObject* py_str_split(
     // is idiomatic and used throughout the stdlib; previously it
     // silently fell back to maxsplit=-1 and split every space.
     if (kwargs && kwargs->getSize(context) > 0) {
-        const proto::ProtoTuple* kwNames = env ? env->getCurrentKwNames() : nullptr;
-        if (kwNames) {
+        {
             const proto::ProtoString* msKey =
                 PythonEnvironment::getInternedString(context, "maxsplit");
-            proto::proto_ulong hash = msKey->getHash(context);
+            proto::proto_ulong hash = PythonEnvironment::kwKey(context, msKey);
             if (kwargs->has(context, hash)) {
                 if (!readMaxsplit(kwargs->getAt(context, hash))) return nullptr;
             }
             const proto::ProtoString* sepKey =
                 PythonEnvironment::getInternedString(context, "sep");
-            proto::proto_ulong sepHash = sepKey->getHash(context);
+            proto::proto_ulong sepHash = PythonEnvironment::kwKey(context, sepKey);
             if (kwargs->has(context, sepHash)) {
                 const proto::ProtoObject* skw = kwargs->getAt(context, sepHash);
                 if (skw && skw != PROTO_NONE) {
@@ -15138,7 +15205,7 @@ static const proto::ProtoObject* py_str_splitlines(
     }
     if (kwArgs) {
         const proto::ProtoString* keS = PythonEnvironment::getInternedString(context, "keepends");
-        proto::proto_ulong h = keS->getHash(context);
+        proto::proto_ulong h = PythonEnvironment::kwKey(context, keS);
         if (kwArgs->has(context, h)) {
             coerceKeepends(kwArgs->getAt(context, h));
         }
@@ -16252,6 +16319,180 @@ static const proto::ProtoObject* py_dict_bool(
     return dict->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
+// --- dict_keys / dict_items set semantics ---
+//
+// A view is a snapshot (docs/DEVIATIONS.md): its `__data__` lists the keys,
+// the (key, value) tuples or the values when the view was made. dict.keys()
+// and dict.items() also keep the dict's storage of that moment under
+// `__view_storage__` (immutable, so it stays the snapshot), which answers
+// membership by hash as CPython's views do. A view built without it (a
+// module or proxy view) answers membership by scanning.
+
+enum class DictViewKind { None, Keys, Items, Values };
+
+static DictViewKind dictViewKind(proto::ProtoContext* context, const proto::ProtoObject* obj) {
+    if (!obj || (reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0) return DictViewKind::None;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !(env->dictViewPrototypes[0] || env->dictViewPrototypes[1] || env->dictViewPrototypes[2])) return DictViewKind::None;
+    // A view is a direct child of its view prototype (wrapInDictView).
+    const proto::ProtoObject* p = obj->getFirstParent(context);
+    if (!p || p == PROTO_NONE) return DictViewKind::None;
+    if (p == env->dictViewPrototypes[0]) return DictViewKind::Keys;
+    if (p == env->dictViewPrototypes[1]) return DictViewKind::Items;
+    if (p == env->dictViewPrototypes[2]) return DictViewKind::Values;
+    return DictViewKind::None;
+}
+
+static const proto::ProtoList* dictViewElements(proto::ProtoContext* context, const proto::ProtoObject* view) {
+    const proto::ProtoObject* d = view->getAttribute(context, PythonEnvironment::getInternedString(context, "__data__"));
+    const proto::ProtoList* l = d ? ::protoPython::listStorage(context, d) : nullptr;
+    return l ? l : context->newList();
+}
+
+static const proto::ProtoSparseList* dictViewStorage(proto::ProtoContext* context, const proto::ProtoObject* view) {
+    const proto::ProtoString* key = PythonEnvironment::getInternedString(context, "__view_storage__");
+    if (view->hasOwnAttribute(context, key) != PROTO_TRUE) return nullptr;
+    const proto::ProtoObject* d = view->getOwnAttributeDirect(context, key);
+    return d ? d->asSparseList(context) : nullptr;
+}
+
+// `x in view` for a keys or items view (CPython's dictkeys_contains /
+// dictitems_contains: an unhashable key raises TypeError).
+static bool dictViewContains(proto::ProtoContext* context, const proto::ProtoObject* view, DictViewKind kind,
+                             const proto::ProtoObject* x) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoSparseList* storage = dictViewStorage(context, view);
+    if (kind == DictViewKind::Items) {
+        const TupleView t = x ? PythonEnvironment::tupleView(context, x) : TupleView{};
+        if (!t || t->getSize(context) != 2) return false;
+        const proto::ProtoObject* key = t->getAt(context, 0);
+        const proto::ProtoObject* value = t->getAt(context, 1);
+        if (storage) {
+            const proto::ProtoObject* found = nullptr;
+            if (!pyDictFind(context, storage, key, &found)) return false;
+            return found && (found == value || (env && env->objectsEqual(context, found, value)));
+        }
+    } else if (kind == DictViewKind::Keys && storage) {
+        const proto::ProtoObject* found = nullptr;
+        if (!pyDictFind(context, storage, x, &found)) return false;
+        return found != nullptr;
+    }
+    const proto::ProtoList* elements = dictViewElements(context, view);
+    const proto::proto_ulong n = elements->getSize(context);
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        const proto::ProtoObject* e = elements->getAt(context, static_cast<int>(i));
+        if (e == x || (env && env->objectsEqual(context, e, x))) return true;
+    }
+    return false;
+}
+
+static bool isDictView(proto::ProtoContext* context, const proto::ProtoObject* obj) {
+    return dictViewKind(context, obj) != DictViewKind::None;
+}
+
+int PythonEnvironment::dictViewMembership(proto::ProtoContext* ctx, const proto::ProtoObject* view,
+                                          const proto::ProtoObject* x) {
+    const DictViewKind kind = dictViewKind(ctx, view);
+    if (kind != DictViewKind::Keys && kind != DictViewKind::Items) return -1;
+    return dictViewContains(ctx, view, kind, x) ? 1 : 0;
+}
+
+// A set, a frozenset, or a keys or items view: the operands CPython's view
+// comparisons accept (anything else gives NotImplemented).
+static bool dictViewSetLike(proto::ProtoContext* context, const proto::ProtoObject* obj) {
+    if (set_underlying(context, obj)) return true;
+    const DictViewKind k = dictViewKind(context, obj);
+    return k == DictViewKind::Keys || k == DictViewKind::Items;
+}
+
+static proto::proto_ulong dictViewSetLikeSize(proto::ProtoContext* context, const proto::ProtoObject* obj) {
+    if (const proto::ProtoSparseList* t = set_underlying(context, obj)) return setTableSize(context, t);
+    return dictViewElements(context, obj)->getSize(context);
+}
+
+static bool dictViewSetLikeContains(proto::ProtoContext* context, const proto::ProtoObject* obj, const proto::ProtoObject* x) {
+    if (const proto::ProtoSparseList* t = set_underlying(context, obj)) {
+        DictKey dk;
+        if (!setLookupKey(context, x, dk)) {
+            // An unhashable element is in no set (CPython's all_contained_in
+            // uses PySequence_Contains, which raises; a view never holds an
+            // unhashable key, and an item with an unhashable value cannot be
+            // in a set either).
+            return false;
+        }
+        return setFind(context, t, dk) != nullptr;
+    }
+    return dictViewContains(context, obj, dictViewKind(context, obj), x);
+}
+
+// Every element of the set-like `a` is in the set-like `b`.
+static bool dictViewAllContained(proto::ProtoContext* context, const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    if (set_underlying(context, a)) {
+        const proto::ProtoSparseList* t = set_underlying(context, a);
+        const proto::ProtoObject* asSet = new_set_like(context, nullptr, t);
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* it = env ? env->iter(asSet) : nullptr;
+        if (!it) return true;
+        PythonEnvironment::TransientPin pinIt(env, it);
+        while (const proto::ProtoObject* x = env->next(it)) {
+            if (!dictViewSetLikeContains(context, b, x)) return false;
+        }
+        return true;
+    }
+    const proto::ProtoList* elements = dictViewElements(context, a);
+    const proto::proto_ulong n = elements->getSize(context);
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        if (!dictViewSetLikeContains(context, b, elements->getAt(context, static_cast<int>(i)))) return false;
+    }
+    return true;
+}
+
+enum class DictViewCompare { Eq, Ne, Lt, Le, Gt, Ge };
+
+// CPython's dictview_richcompare.
+static const proto::ProtoObject* dictViewCompare(proto::ProtoContext* context, const proto::ProtoObject* self,
+                                                 const proto::ProtoArguments* args, DictViewCompare op) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* notImplemented = env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    if (!args || args->getSize(context) != 1) return notImplemented;
+    const proto::ProtoObject* other = args->getAt(context, 0);
+    if (!dictViewSetLike(context, other)) return notImplemented;
+    const proto::proto_ulong ls = dictViewSetLikeSize(context, self);
+    const proto::proto_ulong lo = dictViewSetLikeSize(context, other);
+    bool ok = false;
+    switch (op) {
+        case DictViewCompare::Eq:
+        case DictViewCompare::Ne:
+            ok = ls == lo && dictViewAllContained(context, self, other);
+            if (op == DictViewCompare::Ne) ok = !ok;
+            break;
+        case DictViewCompare::Lt: ok = ls < lo && dictViewAllContained(context, self, other); break;
+        case DictViewCompare::Le: ok = ls <= lo && dictViewAllContained(context, self, other); break;
+        case DictViewCompare::Gt: ok = ls > lo && dictViewAllContained(context, other, self); break;
+        case DictViewCompare::Ge: ok = ls >= lo && dictViewAllContained(context, other, self); break;
+    }
+    return ok ? PROTO_TRUE : PROTO_FALSE;
+}
+
+// `view <op> other` (reflected: `other <op> view`) as CPython computes it: the
+// left operand made a set, then the set operation with the right operand,
+// which may be any iterable. The result is a set.
+static const proto::ProtoObject* dictViewSetOp(proto::ProtoContext* context, const proto::ProtoObject* self,
+                                               const proto::ProtoArguments* args, proto::ProtoMethod setOp,
+                                               bool reflected) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!args || args->getSize(context) != 1) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(context, 0);
+    const proto::ProtoObject* left = reflected ? other : self;
+    const proto::ProtoObject* right = reflected ? self : other;
+    const proto::ProtoSparseList* leftElements = set_from_iterable(context, left);
+    if (!leftElements) return nullptr;
+    // A fresh mutable set, even when `left` is itself a set: set(left).
+    const proto::ProtoObject* leftSet = new_set_like(context, nullptr, leftElements);
+    return setOp(context, leftSet, nullptr,
+                 argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, right))), nullptr);
+}
+
 // View prototype helper.  CPython exposes `dict.keys()/items()/values()`
 // as dict_keys / dict_items / dict_values — distinct types that are
 // iterable but NOT instances of list.  Build a thin per-env cached
@@ -16353,6 +16594,82 @@ static const proto::ProtoObject* getOrBuildDictView(
             std::string body = d ? PythonEnvironment::reprObject(ctx, const_cast<proto::ProtoObject*>(d)) : "[]";
             return PythonEnvironment::getInternedString(ctx, (vn + "(" + body + ")").c_str())->asObject(ctx);
         })));
+    // dict_keys and dict_items are set-like (collections.abc.Set):
+    // membership, the six comparisons, isdisjoint and the four operators
+    // with their reflections. dict_values has none of these in CPython.
+    const std::string vname(viewName);
+    if (vname == "dict_keys" || vname == "dict_items") {
+        auto def = [&](const char* name, proto::ProtoMethod m) {
+            proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
+                PythonEnvironment::getInternedString(context, name), context->fromMethod(nullptr, m)));
+        };
+        def("__contains__", +[](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+                                const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+            if (!a || a->getSize(ctx) != 1) return PROTO_FALSE;
+            return dictViewContains(ctx, self, dictViewKind(ctx, self), a->getAt(ctx, 0)) ? PROTO_TRUE : PROTO_FALSE;
+        });
+#define PP_VIEW_CMP(NAME, OP) \
+        def(NAME, +[](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, \
+                      const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* { \
+            return dictViewCompare(ctx, self, a, DictViewCompare::OP); \
+        });
+        PP_VIEW_CMP("__eq__", Eq)
+        PP_VIEW_CMP("__ne__", Ne)
+        PP_VIEW_CMP("__lt__", Lt)
+        PP_VIEW_CMP("__le__", Le)
+        PP_VIEW_CMP("__gt__", Gt)
+        PP_VIEW_CMP("__ge__", Ge)
+#undef PP_VIEW_CMP
+#define PP_VIEW_SETOP(NAME, FN, REFLECTED) \
+        def(NAME, +[](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, \
+                      const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* { \
+            return dictViewSetOp(ctx, self, a, FN, REFLECTED); \
+        });
+        PP_VIEW_SETOP("__and__", py_set_intersection, false)
+        PP_VIEW_SETOP("__or__", py_set_union, false)
+        PP_VIEW_SETOP("__sub__", py_set_difference, false)
+        PP_VIEW_SETOP("__xor__", py_set_symmetric_difference, false)
+        PP_VIEW_SETOP("__rand__", py_set_intersection, true)
+        PP_VIEW_SETOP("__ror__", py_set_union, true)
+        PP_VIEW_SETOP("__rsub__", py_set_difference, true)
+        PP_VIEW_SETOP("__rxor__", py_set_symmetric_difference, true)
+#undef PP_VIEW_SETOP
+        def("isdisjoint", +[](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+                              const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+            PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
+            if (!e || !a || a->getSize(ctx) != 1) return PROTO_NONE;
+            const DictViewKind kind = dictViewKind(ctx, self);
+            const proto::ProtoObject* it = e->iter(a->getAt(ctx, 0));
+            if (!it) return nullptr;
+            PythonEnvironment::TransientPin pinIt(e, it);
+            while (const proto::ProtoObject* x = e->next(it)) {
+                if (dictViewContains(ctx, self, kind, x)) return PROTO_FALSE;
+            }
+            return PROTO_TRUE;
+        });
+        // A view is unhashable, as in CPython (it defines __eq__).
+        proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context, env->getHashString(), PROTO_NONE));
+    }
+    if (vname == "dict_values") {
+        // dict_values compares by identity only (CPython defines no
+        // comparison for it); without these, the snapshot list's equality
+        // answered `d.values() == d.values()` with True.
+        proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context, env->getEqString(),
+            context->fromMethod(nullptr, +[](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+                                             const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+                PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
+                if (a && a->getSize(ctx) == 1 && a->getAt(ctx, 0) == self) return PROTO_TRUE;
+                return e ? e->getNotImplementedPrototype() : PROTO_FALSE;
+            })));
+        proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
+            PythonEnvironment::getInternedString(context, "__ne__"),
+            context->fromMethod(nullptr, +[](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+                                             const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
+                PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
+                if (a && a->getSize(ctx) == 1 && a->getAt(ctx, 0) == self) return PROTO_FALSE;
+                return e ? e->getNotImplementedPrototype() : PROTO_TRUE;
+            })));
+    }
     proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
         PythonEnvironment::getInternedString(context, "__bases__"),
         ::protoPython::PythonEnvironment::tupleFromList(context, context->newList()->appendLast(context, env->getObjectPrototype()))));
@@ -16371,6 +16688,10 @@ static const proto::ProtoObject* getOrBuildDictView(
     // Cache the prototype on the env's dictPrototype as a hidden attr
     // (perpetual via interned key; instance lifetime matches dict's).
     const_cast<proto::ProtoObject*>(dictProto)->setAttribute(context, protoKey, proto);
+    // Reachable through dictPrototype, so these pointers need no root.
+    if (vname == "dict_keys") env->dictViewPrototypes[0] = proto;
+    else if (vname == "dict_items") env->dictViewPrototypes[1] = proto;
+    else if (vname == "dict_values") env->dictViewPrototypes[2] = proto;
     return proto;
 }
 
@@ -16391,6 +16712,16 @@ static const proto::ProtoObject* wrapInDictView(
     obj->setAttribute(context, PythonEnvironment::getInternedString(context, "__data__"), data->asObject(context));
     obj->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), viewProto);
     return obj;
+}
+
+// Keeps the dict's storage of this moment on a keys or items view, for
+// membership by hash (see "dict_keys / dict_items set semantics").
+static void attachViewStorage(proto::ProtoContext* context, const proto::ProtoObject* dict, const proto::ProtoObject* view) {
+    if (!dict || !view) return;
+    const proto::ProtoObject* data = dict->getAttribute(context, PythonEnvironment::getInternalString(context, "__data__"));
+    if (!data || !data->asSparseList(context)) return;
+    const_cast<proto::ProtoObject*>(view)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__view_storage__"), data);
 }
 
 // Helper: extract receiver for dict methods accepting both bound and
@@ -16424,7 +16755,9 @@ static const proto::ProtoObject* py_dict_keys(
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoObject* keysObj = receiver ? receiver->getAttribute(context, keysName) : nullptr;
     const proto::ProtoList* keys = keysObj && ::protoPython::listStorage(context, keysObj) ? ::protoPython::listStorage(context, keysObj) : context->newList();
-    return wrapInDictView(context, keys, "dict_keys");
+    const proto::ProtoObject* view = wrapInDictView(context, keys, "dict_keys");
+    attachViewStorage(context, receiver, view);
+    return view;
 }
 
 // dict.__reversed__: iterate keys in reverse insertion order.
@@ -16517,7 +16850,9 @@ static const proto::ProtoObject* py_dict_items(
         }
     }
     
-    return wrapInDictView(context, items, "dict_items");
+    const proto::ProtoObject* view = wrapInDictView(context, items, "dict_items");
+    attachViewStorage(context, receiver, view);
+    return view;
 }
 
 struct KeyCollector {
@@ -17273,19 +17608,15 @@ static const proto::ProtoObject* py_dict_update(
 kwargs_phase:
     // CPython: dict.update(**kwargs) — merge keyword args last so they
     // override any matching keys produced by the positional argument.
-    // kwarg names live in the CALL_KW kwnames tuple on the call stack;
-    // recover them via env->getCurrentKwNames() and walk in order.
+    // The call's own pairs name the keys, in call order.
     if (env && keywordParameters && keywordParameters->getSize(context) > 0) {
-        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();
-        if (kwNames) {
-            proto::proto_ulong kwSize = kwNames->getSize(context);
-            for (proto::proto_ulong i = 0; i < kwSize; ++i) {
-                const proto::ProtoObject* keyObj = kwNames->getAt(context, static_cast<int>(i));
-                if (!keyObj || !keyObj->isString(context)) continue;
-                const proto::ProtoString* ks = keyObj->asString(context);
-                proto::proto_ulong hash = ks->getHash(context);
-                if (!keywordParameters->has(context, hash)) continue;
-                const proto::ProtoObject* v = keywordParameters->getAt(context, hash);
+        const std::vector<proto::ProtoKeywordArgument> kwPairs = env->keywordsInCallOrder(context, keywordParameters);
+        {
+            for (size_t i = 0; i < kwPairs.size(); ++i) {
+                if (!kwPairs[i].name) continue;
+                const proto::ProtoString* ks = kwPairs[i].name;
+                const proto::ProtoObject* keyObj = ks->asObject(context);
+                const proto::ProtoObject* v = kwPairs[i].value;
                 dictStore(context, dict, keys, keyObj, v ? v : PROTO_NONE);
                 bool isModule = target->isInstanceOf(context, env->getModulePrototype()) == PROTO_TRUE;
                 if (isModule) env->setAttribute(context, target, ks, v ? v : PROTO_NONE);
@@ -17552,7 +17883,9 @@ static const proto::ProtoObject* py_dict_or(
     }
     const proto::ProtoList* parents = self->getParents(context);
     const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
-    const proto::ProtoObject* result = context->newObject(false);
+    // A new dict is mutable: an immutable result silently dropped every
+    // later write (`c = a | b; c[k] = v`).
+    const proto::ProtoObject* result = context->newObject(true);
     if (parent) result = result->addParent(context, parent);
     result = result->setAttribute(context, keysName, keys->asObject(context));
     result = result->setAttribute(context, dataName, dict->asObject(context));
@@ -17593,7 +17926,9 @@ static const proto::ProtoObject* py_dict_ror(
     }
     const proto::ProtoList* parents = other->getParents(context);
     const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
-    const proto::ProtoObject* result = context->newObject(false);
+    // A new dict is mutable: an immutable result silently dropped every
+    // later write (`c = a | b; c[k] = v`).
+    const proto::ProtoObject* result = context->newObject(true);
     if (parent) result = result->addParent(context, parent);
     result = result->setAttribute(context, keysName, keys->asObject(context));
     result = result->setAttribute(context, dataName, dict->asObject(context));
@@ -18978,76 +19313,52 @@ static const proto::ProtoObject* py_module_copy(
     return dictObj;
 }
 
-// module.update(other) — set attributes on the module from a dict or other mapping
+static void moduleNamespaceSet(proto::ProtoContext* context, PythonEnvironment* env,
+                               const proto::ProtoObject* self,
+                               const proto::ProtoString* name,
+                               const proto::ProtoObject* value);
+static const proto::ProtoString* moduleNamespaceKey(proto::ProtoContext* context,
+                                                    PythonEnvironment* env,
+                                                    const proto::ProtoObject* key);
+
+// vars(module).update(...): the arguments dict.update takes (a mapping, an
+// iterable of pairs, keywords), every key written into the namespace as
+// `vars(module)[key] = value` writes it, dunder names included, as CPython
+// does. The pairs are gathered by dict.update itself into a scratch dict, so
+// both accept the same forms; a key that is not a str raises TypeError (a
+// module namespace takes str keys only, docs/DEVIATIONS.md).
 static const proto::ProtoObject* py_module_update(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*,
     const proto::ProtoArguments* positionalParameters,
-    const proto::ProtoKeywordArguments*) {
+    const proto::ProtoKeywordArguments* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!self || self == PROTO_NONE || !env) return PROTO_NONE;
-    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
-
-    const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
-    if (!other || other == PROTO_NONE) return PROTO_NONE;
-
-    const proto::ProtoString* keysName = env->getKeysString();
-    const proto::ProtoString* dataName = env->getDataString();
-
-    // If other is a Python dict (has __keys__ / __data__)
-    const proto::ProtoObject* keysObj = (other->hasOwnAttribute(context, keysName) == PROTO_TRUE)
-        ? other->getAttribute(context, keysName) : nullptr;
-    const proto::ProtoList* keys = keysObj && ::protoPython::listStorage(context, keysObj) ? ::protoPython::listStorage(context, keysObj) : nullptr;
-    const proto::ProtoObject* dataObj = (other->hasOwnAttribute(context, dataName) == PROTO_TRUE)
-        ? other->getAttribute(context, dataName) : nullptr;
-    const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : nullptr;
-
-    if (keys && dict) {
-        for (proto::proto_ulong i = 0; i < keys->getSize(context); ++i) {
-            const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
-            if (!key || !key->isString(context)) continue;
-            std::string keyName;
-            key->asString(context)->toUTF8String(context, keyName);
-            // Skip dunder and internal attrs — same policy as the else-branch below
-            bool isDunder = keyName.size() >= 4 && keyName[0] == '_' && keyName[1] == '_'
-                             && keyName[keyName.size()-1] == '_' && keyName[keyName.size()-2] == '_';
-            if (isDunder || isModuleInternalAttr(keyName)) continue;
-            const proto::ProtoObject* value = dictStoredValue(context, dict, key);
-            if (!value) continue;
-            if (protoPython::diagModUpdateEnabled()) {
-                fprintf(stderr, "py_module_update: setting self=%p key='%s'\n", (void*)self, keyName.c_str());
-                fflush(stderr);
-            }
-            env->setAttribute(context, self, key->asString(context), value);
+    if (!self || self == PROTO_NONE || !env || !env->getDictPrototype()) return PROTO_NONE;
+    const proto::ProtoObject* scratch = env->initDictStorage(context, env->getDictPrototype()->newChild(context, true));
+    const proto::ProtoList* noArgs = context->newList();
+    proto::ProtoListArguments emptyArgs(context, noArgs);
+    const proto::ProtoArguments* args = positionalParameters ? positionalParameters : argsView(emptyArgs);
+    if (!py_dict_update(context, scratch, nullptr, args, keywordParameters)) return nullptr;
+    const proto::ProtoObject* keysObj = scratch->getAttribute(context, env->getKeysString());
+    const proto::ProtoList* keys = keysObj ? ::protoPython::listStorage(context, keysObj) : nullptr;
+    const proto::ProtoObject* dataObj = scratch->getAttribute(context, env->getDataString());
+    const proto::ProtoSparseList* data = dataObj ? dataObj->asSparseList(context) : nullptr;
+    if (!keys || !data) return PROTO_NONE;
+    const proto::proto_ulong n = keys->getSize(context);
+    for (proto::proto_ulong i = 0; i < n; ++i) {
+        const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
+        const proto::ProtoString* name = moduleNamespaceKey(context, env, key);
+        if (!name) {
+            env->raiseTypeError(context, "module namespace keys must be strings");
+            return nullptr;
         }
-    } else {
-        // other is a module or generic mapping — iterate own attributes
-        // Only copy non-dunder, non-internal attributes to avoid corrupting the target module.
-        // env->setAttribute may run Python code (__setattr__, descriptors) and
-        // raise; protoCore restores its walk anchor on unwind.  The sink holds
-        // only objects the caller already keeps reachable.
-        struct UpdateSink {
-            PythonEnvironment* env;
-            const proto::ProtoObject* target;
-            const proto::ProtoObject* source;
-        } sink{env, self, other};
-        other->processOwnAttributes(context, &sink,
-            [](proto::ProtoContext* ctx, void* userData, const proto::ProtoString* key,
-               const proto::ProtoObject*) {
-                UpdateSink* s = static_cast<UpdateSink*>(userData);
-                if (!key) return;
-                std::string name;
-                key->toUTF8String(ctx, name);
-                // Skip dunder attrs and internal storage — they belong to the source, not target
-                bool isDunder = name.size() >= 4 && name[0] == '_' && name[1] == '_'
-                                && name[name.size()-1] == '_' && name[name.size()-2] == '_';
-                if (isDunder || isModuleInternalAttr(name)) return;
-                const proto::ProtoObject* val = s->source->getAttribute(ctx, key);
-                if (val) s->env->setAttribute(ctx, s->target, key, val);
-            });
+        std::string nm;
+        name->toUTF8String(context, nm);
+        // The runtime's own storage names are not namespace entries.
+        if (isModuleInternalAttr(nm)) continue;
+        moduleNamespaceSet(context, env, self, name, dictStoredValue(context, data, key));
     }
-
     return PROTO_NONE;
 }
 
@@ -19615,7 +19926,7 @@ static const proto::ProtoObject* py_code_replace(
         "co_freevars", "co_cellvars", "co_linetable", "co_exceptiontable",
     };
     for (const char* f : fixed) {
-        if (kwargs && kwargs->has(context, PythonEnvironment::getInternedString(context, f)->getHash(context))) {
+        if (kwargs && kwargs->has(context, PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, f)))) {
             env->raiseValueError(context, PythonEnvironment::newStr(context,
                 std::string("code.replace() cannot change ") + f + " in protoPython"));
             return nullptr;
@@ -19623,7 +19934,7 @@ static const proto::ProtoObject* py_code_replace(
     }
     for (const char* f : changeable) {
         const proto::ProtoString* name = PythonEnvironment::getInternedString(context, f);
-        const proto::proto_ulong key = name->getHash(context);
+        const proto::proto_ulong key = PythonEnvironment::kwKey(context, name);
         if (!kwargs || !kwargs->has(context, key)) continue;
         ++matched;
         const proto::ProtoObject* value = kwargs->getAt(context, key);
@@ -29630,6 +29941,12 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     const proto::ProtoObject* k = keysList->getAt(ctx, static_cast<int>(i));
                     if (sameStringKey(ctx, k, name->asObject(ctx))) { present = true; break; }
                 }
+            } else if (modulePrototype && obj->isInstanceOf(ctx, modulePrototype) == PROTO_TRUE) {
+                // A module without its own key list lists its own
+                // attributes (moduleNamespaceTrackKey): a list started
+                // here would hold this name only and hide the module's
+                // earlier names from keys() and items().
+                return result;
             } else {
                 keysList = ctx->newList();
             }
@@ -30761,6 +31078,12 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
             return nullptr;
         }
     }
+    // A dict view whose comparison answered NotImplemented compares by
+    // identity, as CPython falls back for == and !=; the structural paths
+    // below would compare its snapshot list as a list.
+    if (sawNotImplemented && (op == 0 || op == 1) && (isDictView(ctx, a) || isDictView(ctx, b))) {
+        return ((a == b) == (op == 0)) ? PROTO_TRUE : PROTO_FALSE;
+    }
     int c = 0;
     // Unwrap subclass-of-int / subclass-of-float instances via __data__
     // before the kind-based dispatch below.  Wrapped instances carry
@@ -31243,7 +31566,7 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
 
     for (const auto& kw : keywords) {
         const proto::ProtoString* keyStr = PythonEnvironment::getInternedString(ctx, kw.first.c_str());
-        psKwargs = psKwargs->setAt(ctx, keyStr->getHash(ctx), kw.second);
+        psKwargs = psKwargs->setAt(ctx, PythonEnvironment::kwKey(ctx, keyStr), kw.second);
         kwNames = kwNames->appendLast(ctx, keyStr->asObject(ctx));
     }
 
@@ -31255,7 +31578,7 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
                 const proto::ProtoObject* k = kList->getAt(ctx, static_cast<int>(i));
                 if (k && k->isString(ctx)) {
                     const proto::ProtoString* ks = k->asString(ctx);
-                    psKwargs = psKwargs->setAt(ctx, ks->getHash(ctx), this->getItem(kwargs, k, ctx));
+                    psKwargs = psKwargs->setAt(ctx, PythonEnvironment::kwKey(ctx, ks), this->getItem(kwargs, k, ctx));
                     kwNames = kwNames->appendLast(ctx, ks->asObject(ctx));
                 }
             }
@@ -31651,35 +31974,23 @@ bool PythonEnvironment::bindArgumentsCore(proto::ProtoContext* ctx, const Argume
         out[kwargsIdx] = kwDict;
     }
 
-    // Keyword arguments, in call order: the names this call received (the
-    // keyword-names stack may belong to an enclosing call: only names this
-    // call's keywords hold count).
+    // Keyword arguments, in call order. Each pair's key is the interned
+    // name's pointer (protoCore's calling convention, rule 3), so the pair
+    // names the keyword itself, whoever made the call (the interpreter,
+    // protopyc code, C++ or another runtime).
     std::vector<std::string> posOnlyAsKeyword;
     if (kwargs && kwargs->getSize(ctx) > 0) {
         std::vector<const proto::ProtoObject*> kwNames;
-        if (const proto::ProtoTuple* stacked = getCurrentKwNames()) {
-            for (proto::proto_ulong i = 0; i < stacked->getSize(ctx); ++i) {
-                const proto::ProtoObject* k = stacked->getAt(ctx, static_cast<int>(i));
-                if (k && k->isString(ctx) && kwargs->has(ctx, k->getHash(ctx))) kwNames.push_back(k);
-            }
-        }
-        // A keyword whose name is not on the stack can still bind a
-        // parameter by its hash; it cannot be named in a message or a dict.
-        size_t named = kwNames.size();
-        for (unsigned i = sig.nPosOnly; i < nPos + nKw && named < kwargs->getSize(ctx); ++i) {
-            const proto::proto_ulong h = names[i]->getHash(ctx);
-            bool listed = false;
-            for (const auto* k : kwNames) if (k->getHash(ctx) == h) { listed = true; break; }
-            if (!listed && kwargs->has(ctx, h)) { kwNames.push_back(names[i]->asObject(ctx)); ++named; }
-        }
+        for (const proto::ProtoKeywordArgument& p : keywordsInCallOrder(ctx, kwargs))
+            kwNames.push_back(p.name->asObject(ctx));
         for (const proto::ProtoObject* k : kwNames) {
-            const proto::proto_ulong h = k->getHash(ctx);
+            const proto::proto_ulong h = PythonEnvironment::kwKey(ctx, k);
             const proto::ProtoObject* value = kwargs->getAt(ctx, h);
             std::string kname;
             k->asString(ctx)->toUTF8String(ctx, kname);
             int target = -1;
             for (unsigned i = sig.nPosOnly; i < nPos + nKw; ++i) {
-                if (names[i]->getHash(ctx) == h) { target = static_cast<int>(i); break; }
+                if (PythonEnvironment::kwKey(ctx, names[i]) == h) { target = static_cast<int>(i); break; }
             }
             if (target < 0) {
                 if (sig.hasKwargs) {
@@ -31689,7 +32000,7 @@ bool PythonEnvironment::bindArgumentsCore(proto::ProtoContext* ctx, const Argume
                     continue;
                 }
                 bool posOnly = false;
-                for (unsigned i = 0; i < sig.nPosOnly; ++i) if (names[i]->getHash(ctx) == h) posOnly = true;
+                for (unsigned i = 0; i < sig.nPosOnly; ++i) if (PythonEnvironment::kwKey(ctx, names[i]) == h) posOnly = true;
                 if (posOnly) { posOnlyAsKeyword.push_back(kname); continue; }
                 raiseTypeError(ctx, fnameOf() + " got an unexpected keyword argument '" + kname + "'");
                 return false;
@@ -32817,6 +33128,30 @@ void PythonEnvironment::popKwNames() {
 
 const proto::ProtoTuple* PythonEnvironment::getCurrentKwNames() const {
     return s_kwNamesStack.empty() ? nullptr : s_kwNamesStack.back();
+}
+
+std::vector<proto::ProtoKeywordArgument> PythonEnvironment::keywordsInCallOrder(
+        proto::ProtoContext* ctx, const proto::ProtoKeywordArguments* kwargs) const {
+    std::vector<proto::ProtoKeywordArgument> out;
+    if (!kwargs || kwargs->count() == 0) return out;
+    const unsigned n = kwargs->count();
+    if (const proto::ProtoTuple* names = getCurrentKwNames()) {
+        const proto::proto_ulong sz = names->getSize(ctx);
+        for (proto::proto_ulong i = 0; i < sz && out.size() <= n; ++i) {
+            const proto::ProtoObject* k = names->getAt(ctx, static_cast<int>(i));
+            if (!k || !k->isString(ctx)) continue;
+            const proto::proto_ulong key = kwKey(ctx, k);
+            if (!kwargs->has(ctx, key)) continue;
+            out.push_back({reinterpret_cast<const proto::ProtoString*>(key), kwargs->getAt(ctx, key)});
+        }
+        if (out.size() == n) return out;
+        out.clear();
+    }
+    const proto::ProtoKeywordArgument* pairs = kwargs->pairs();
+    for (unsigned i = 0; i < n; ++i) {
+        if (pairs[i].name) out.push_back(pairs[i]);
+    }
+    return out;
 }
 
 // Task queue of the minimal native coroutine loop. It was a PythonEnvironment

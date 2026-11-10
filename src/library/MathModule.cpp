@@ -220,8 +220,8 @@ static const proto::ProtoObject* py_isclose(
     double rel_tol = 1e-09;
     double abs_tol = 0.0;
     if (kwArgs) {
-        const proto::proto_ulong relH = PythonEnvironment::getInternedString(ctx, "rel_tol")->getHash(ctx);
-        const proto::proto_ulong absH = PythonEnvironment::getInternedString(ctx, "abs_tol")->getHash(ctx);
+        const proto::proto_ulong relH = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "rel_tol"));
+        const proto::proto_ulong absH = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "abs_tol"));
         if (kwArgs->has(ctx, relH)) rel_tol = toDouble(ctx, kwArgs->getAt(ctx, relH));
         if (kwArgs->has(ctx, absH)) abs_tol = toDouble(ctx, kwArgs->getAt(ctx, absH));
     }

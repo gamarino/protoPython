@@ -2704,8 +2704,11 @@ static const proto::ProtoObject* py_len(
   prototypes in `PythonEnvironment::initializeRootObjects`. Use interned
   names (`getInternedString`).
 - **Arguments.** `positionalParameters->getSize(ctx)` and `getAt(ctx, i)`;
-  keyword arguments by the interned name's hash through
-  `keywordParameters`. Check the count yourself and raise CPython's
+  keyword arguments through `keywordParameters`, keyed by the interned
+  name's pointer as protoCore's calling convention defines
+  (`keywordParameters->getAt(ctx, PythonEnvironment::kwKey(ctx, name))`,
+  never the name's content hash); `env->keywordsInCallOrder(ctx,
+  keywordParameters)` enumerates them in call order. Check the count yourself and raise CPython's
   `TypeError`: nothing checks it for you (`len()` returned `None` until it
   did). `BuiltinsModule.cpp` has `requireArgs` for the common case.
 - **Errors.** Raise with `env->raiseTypeError(ctx, "...")`,

@@ -204,7 +204,7 @@ static const proto::ProtoObject* py_b2a_base64(
     bool newline = true;
     if (kwargs) {
         const proto::ProtoObject* nl = kwargs->getAt(ctx,
-            PythonEnvironment::getInternedString(ctx, "newline")->getHash(ctx));
+            PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "newline")));
         if (nl && nl != PROTO_NONE) newline = (nl != PROTO_FALSE);
     }
 
