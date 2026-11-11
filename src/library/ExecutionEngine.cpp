@@ -359,7 +359,7 @@ bool PythonEnvironment::storeAttr(proto::ProtoContext* ctx, const proto::ProtoOb
             const uint32_t flags = ensureClassFlags(ctx, directType);
             // A class receiver takes the full class store (see OP_STORE_ATTR).
             if ((flags & (PYFLAG_HAS_SLOTS | PYFLAG_NO_FAST_STORE)) == 0 && !typeChainInterceptsStore(ctx, this, directType, flags, nameS)
-                    && !storeReceiverIsClass(ctx, obj, flags)) {
+                    && !storeReceiverIsClass(ctx, obj)) {
                 obj->setAttribute(ctx, nameS, value);
                 return true;
             }
@@ -5856,14 +5856,15 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             const bool nsHasOwnAnn = ns ? (ns->hasOwnAttribute(ctx, annS) == PROTO_TRUE) : false;
             const proto::ProtoObject* annVal = nsHasOwnAnn ? ns->getAttribute(ctx, annS) : nullptr;
             if (!annVal || annVal == PROTO_NONE) {
-                // Build a fresh empty dict that looks like a real Python dict
-                // (parent = dictPrototype, __data__ = empty sparse list).
+                // A new empty dict.  It must own both halves of a dict's
+                // storage (__data__ and __keys__, initDictStorage): a dict
+                // that owns only __data__ reads __keys__ through its chain,
+                // from the dict type, whose own __keys__ lists dict's
+                // attribute names ('pop', 'get', ...), so an unannotated
+                // class's __annotations__ held them.
                 const proto::ProtoObject* emptyDict = nullptr;
                 if (env && env->getDictPrototype()) {
-                    emptyDict = env->getDictPrototype()->newChild(ctx, true);
-                    emptyDict = emptyDict->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
-                    emptyDict = emptyDict->setAttribute(ctx, env->getDataString(),
-                                                        ctx->newSparseList()->asObject(ctx));
+                    emptyDict = env->initDictStorage(ctx, env->getDictPrototype()->newChild(ctx, true));
                 } else {
                     emptyDict = ctx->newSparseList()->asObject(ctx);
                 }
@@ -9020,12 +9021,10 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         // typePrototype` does not exclude it, and the raw
                         // write would skip env->setAttribute's class
                         // protocol (class-flag invalidation, the late
-                        // data-descriptor marker).  Only a class with
-                        // subclasses can be such a receiver's first parent
-                        // (PYFLAG_HAS_SUBCLASSES); then the receiver's own
-                        // __is_python_class__ marker decides.  A built-in
-                        // type object's first parent sets
-                        // PYFLAG_NO_FAST_STORE.
+                        // data-descriptor marker).  The receiver's own
+                        // __is_python_class__ marker decides
+                        // (storeReceiverIsClass).  A built-in type object's
+                        // first parent sets PYFLAG_NO_FAST_STORE.
                         const proto::ProtoObject* directType = obj->getFirstParent(ctx);
                         if (directType && directType != PROTO_NONE
                                 && directType != env->getTypePrototype()) {
@@ -9057,7 +9056,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             // then dispatches the hook or the descriptor.
                             const bool intercepted =
                                 typeChainInterceptsStore(ctx, env, directType, flags, nameS);
-                            if (noSlots && !intercepted && !env->storeReceiverIsClass(ctx, obj, flags)) {
+                            if (noSlots && !intercepted && !env->storeReceiverIsClass(ctx, obj)) {
                                 newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, val);
                                 fastStoreTaken = true;
                                 // A module attribute is a global of that module

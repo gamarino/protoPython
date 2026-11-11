@@ -7543,8 +7543,6 @@ const proto::ProtoObject* py_type(
                     ? ::protoPython::listStorage(context, listObj) : context->newList();
                 curList = curList->appendLast(context, targetClass);
                 const_cast<proto::ProtoObject*>(base)->setAttribute(context, subListS, curList->asObject(context));
-                // The base now has a subclass (PYFLAG_HAS_SUBCLASSES).
-                if (env) env->dropOwnClassFlags(context, base);
             }
         }
 

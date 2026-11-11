@@ -1135,7 +1135,10 @@ static const proto::ProtoObject* py_mappingproxy_copy(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return PROTO_NONE;
     const proto::ProtoObject* data = self->getAttribute(context, env->getDataString());
-    if (!data || data == PROTO_NONE) return env->getDictPrototype()->newChild(context, true);
+    // An empty dict owns its storage (see initDictStorage); without it the
+    // dict would read the dict type's own __keys__ through its chain.
+    if (!data || data == PROTO_NONE)
+        return env->initDictStorage(context, env->getDictPrototype()->newChild(context, true));
     // dict(data) reuses py_dict_call's iterable-of-pairs / mapping logic.
     // Look up __new__ rather than __call__ — type.__call__ on the metaclass
     // is the user-visible entrypoint, but the underlying iterable-of-pairs
@@ -1474,6 +1477,24 @@ static const proto::ProtoObject* py_type_get_annotations(
     const proto::ProtoString* annS = PythonEnvironment::getInternedString(context, "__annotations__");
     if (self->hasOwnAttribute(context, annS) == PROTO_TRUE) {
         return self->getAttribute(context, annS);
+    }
+    // A class made without a class statement (type(), types.new_class) has
+    // no own __annotations__: as in CPython, its __annotate__ answers when
+    // it has one, else a new empty dict; either is kept as the class's own.
+    // A built-in type has none (AttributeError).
+    if (self->hasOwnAttribute(context, env->getIsPythonClassString()) == PROTO_TRUE) {
+        const proto::ProtoString* annotateS = PythonEnvironment::getInternedString(context, "__annotate__");
+        const proto::ProtoObject* annotate = self->hasOwnAttribute(context, annotateS) == PROTO_TRUE
+            ? self->getOwnAttributeDirect(context, annotateS) : nullptr;
+        const proto::ProtoObject* annotations = nullptr;
+        if (annotate && annotate != PROTO_NONE) {
+            annotations = env->callObject(annotate, {context->fromInteger(1)});
+            if (!annotations) return nullptr;
+        } else {
+            annotations = env->initDictStorage(context, env->getDictPrototype()->newChild(context, true));
+        }
+        const_cast<proto::ProtoObject*>(self)->proto::ProtoObject::setAttribute(context, annS, annotations);
+        return annotations;
     }
 
     env->raiseAttributeError(context, self, "__annotations__");
@@ -28501,13 +28522,6 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
         }
     }
     if (noDictBuiltinTypes_.count(cls) || builtinTypeParents_.count(cls)) flags |= PYFLAG_NO_FAST_STORE;
-    {
-        const proto::ProtoString* subL = getInternedString(ctx, "\001__subclasses_list__");
-        const proto::ProtoObject* subs = cls->hasOwnAttribute(ctx, subL) == PROTO_TRUE
-            ? cls->getOwnAttributeDirect(ctx, subL) : nullptr;
-        const proto::ProtoList* sl = subs ? ::protoPython::listStorage(ctx, subs) : nullptr;
-        if (sl && sl->getSize(ctx) > 0) flags |= PYFLAG_HAS_SUBCLASSES;
-    }
 
     // Publish.  Use the protoCore setAttribute directly — bypass the
     // env-level descriptor / slots dispatch, since this is internal
@@ -30475,12 +30489,6 @@ void PythonEnvironment::markDataDescriptorShadow(proto::ProtoContext* ctx, const
     dropClassFlags(ctx, cls);
 }
 
-void PythonEnvironment::dropOwnClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls) {
-    if (!pyFlagsString_ || !cls || cls == PROTO_NONE || (reinterpret_cast<uintptr_t>(cls) & 0x3F) != 0) return;
-    if (cls->hasOwnAttribute(ctx, pyFlagsString_) == PROTO_TRUE)
-        const_cast<proto::ProtoObject*>(cls)->removeAttribute(ctx, pyFlagsString_);
-}
-
 void PythonEnvironment::dropClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls) {
     const proto::ProtoString* subL = getInternedString(ctx, "\001__subclasses_list__");
     std::vector<const proto::ProtoObject*> pending{cls};
@@ -31258,7 +31266,6 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 if (!already) {
                     curList = curList->appendLast(ctx, obj);
                     const_cast<proto::ProtoObject*>(nb)->setAttribute(ctx, subListS, curList->asObject(ctx));
-                    dropOwnClassFlags(ctx, nb);  // PYFLAG_HAS_SUBCLASSES
                 }
             }
         }
