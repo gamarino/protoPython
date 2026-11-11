@@ -216,9 +216,58 @@ public:
     static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const std::string& str);
     
     /**
-     * @brief Returns a canonical dunder string for the given name.
+     * @brief The interned symbol spelled by a string literal.
+     *
+     * Only for literals: the result is cached per thread under the literal's
+     * address, so a call costs a pointer hash and no string comparison (a
+     * hot path still keeps its key in a member, as getDataString() does).
+     * The template refuses a `const char*`, whose content could change
+     * under the same address.
+     *
+     * Internal keys -- attributes that hold the runtime's own state, never a
+     * Python name -- are spelled with a leading U+0001 ("\001__data__").
+     * No identifier contains it, and pythonAttributeKey() moves a name that
+     * Python code builds with it out of the way, so Python code can neither
+     * read nor replace that state.
      */
-    static const proto::ProtoString* getInternalString(proto::ProtoContext* ctx, const char* name);
+    template <size_t N>
+    static const proto::ProtoString* getInternalString(proto::ProtoContext* ctx, const char (&name)[N]) {
+        return internalStringAt(ctx, name);
+    }
+    static const proto::ProtoString* internalStringAt(proto::ProtoContext* ctx, const char* literal);
+
+    /** True when @p name is an internal key (first code point U+0001):
+     *  runtime state that no enumeration shows to Python code. */
+    static bool isInternalKey(proto::ProtoContext* ctx, const proto::ProtoString* name);
+    /** Same test on a UTF-8 spelling. */
+    static bool isInternalKeySpelling(const std::string& name) {
+        return !name.empty() && name[0] == '\x01';
+    }
+    /**
+     * The Python name a stored key spells, for enumerations that work on
+     * UTF-8: false for an internal key; an escaped key loses its added
+     * U+0001; any other key is its own name.
+     */
+    static bool storedKeyPythonName(const std::string& stored, std::string& out) {
+        if (!isInternalKeySpelling(stored)) { out = stored; return true; }
+        if (stored.size() < 2 || stored[1] != '\x01') return false;
+        out = stored.substr(1);
+        return true;
+    }
+    /**
+     * The attribute key for a name Python code supplies at run time
+     * (getattr/setattr/delattr/hasattr, object.__setattr__, a namespace
+     * dict's key, ...). A name that starts with U+0001 gets one more U+0001,
+     * so it never equals an internal key; pythonAttributeName() undoes it.
+     * Every other name is its interned symbol.
+     */
+    static const proto::ProtoString* pythonAttributeKey(proto::ProtoContext* ctx, const proto::ProtoString* name);
+    /** Same, for a name already spelled as UTF-8. */
+    static const proto::ProtoString* pythonAttributeKey(proto::ProtoContext* ctx, const std::string& name) {
+        return isInternalKeySpelling(name) ? getInternedString(ctx, "\x01" + name) : getInternedString(ctx, name);
+    }
+    /** The Python name of an attribute key, or nullptr for an internal key. */
+    static const proto::ProtoString* pythonAttributeName(proto::ProtoContext* ctx, const proto::ProtoString* key);
 
     /**
      * @brief Returns the process singleton ProtoSpace (L-Shape: one per process).
@@ -329,6 +378,9 @@ public:
      *  exists. */
     const proto::ProtoObject* getBytearrayPrototype() const { return bytearrayPrototype; }
     void setBytearrayPrototype(const proto::ProtoObject* t) { bytearrayPrototype = t; }
+    /** @brief The `memoryview` type (src/library/MemoryviewType.cpp). */
+    const proto::ProtoObject* getMemoryviewPrototype() const { return memoryviewPrototype_; }
+    void setMemoryviewPrototype(const proto::ProtoObject* t) { memoryviewPrototype_ = t; }
     /** @brief True for the bytes or the bytearray type itself (not a subclass). */
     bool isBytesOrBytearrayType(const proto::ProtoObject* t) const {
         return t && (t == bytesPrototype || t == bytearrayPrototype);
@@ -349,7 +401,7 @@ public:
     /**
      * The frame eval() and exec() run code in when their locals are a
      * mapping (a dict, a dict subclass, any object with __getitem__): its
-     * own `__locals_mapping__` is the mapping, which LOAD_NAME, STORE_NAME
+     * internal key `\001__locals_mapping__` holds the mapping, which LOAD_NAME, STORE_NAME
      * and DELETE_NAME read and write directly (an exact dict through its
      * storage, any other mapping through __getitem__ / __setitem__ /
      * __delitem__), so nothing is copied and a dict subclass's __missing__
@@ -1113,6 +1165,13 @@ public:
     const proto::ProtoString* getPosString() const { return __pos__; }
 
     const proto::ProtoString* getDataString() const { return dataString; }
+    /** Internal keys of the bytes-like types and of eval/exec frames,
+     *  interned once (PythonEnvironment::getInternalString). */
+    const proto::ProtoString* getBytearrayKey() const { return bytearrayKey_; }
+    const proto::ProtoString* getMvDataKey() const { return mvDataKey_; }
+    const proto::ProtoString* getMvStartKey() const { return mvStartKey_; }
+    const proto::ProtoString* getMvStopKey() const { return mvStopKey_; }
+    const proto::ProtoString* getLocalsMappingKey() const { return localsMappingKey_; }
     const proto::ProtoString* getKeysString() const { return keysString; }
     const proto::ProtoString* getSlotsString() const { return slotsString; }
     const proto::ProtoString* getIsSuperProxyString() const { return isSuperProxyString; }
@@ -1540,6 +1599,8 @@ public:
      */
     void raiseAttributeErrorWithMessage(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& message, const std::string& attr);
     void raiseRuntimeError(proto::ProtoContext* context, const std::string& msg);
+    /** SystemError(msg): the runtime found its own state inconsistent. */
+    void raiseSystemError(proto::ProtoContext* context, const std::string& msg);
     void raiseOSError(proto::ProtoContext* context, int errnum, const std::string& strerr, const std::string& filename = "");
     void raiseTypeError(proto::ProtoContext* context, const std::string& msg);
     /** Raise ImportError (ModuleNotFoundError for "No module named" messages)
@@ -2136,6 +2197,7 @@ private:
     const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* bytesPrototype;
     const proto::ProtoObject* bytearrayPrototype = nullptr;
+    const proto::ProtoObject* memoryviewPrototype_ = nullptr;
     std::shared_ptr<void> reModuleState_;  // see reModuleState()
     const proto::ProtoObject* nonePrototype;
     const proto::ProtoObject* ellipsisPrototype;
@@ -2417,6 +2479,11 @@ private:
     const proto::ProtoString* dataString{nullptr};
     const proto::ProtoString* keysString{nullptr};
     const proto::ProtoString* slotsString{nullptr};
+    const proto::ProtoString* bytearrayKey_{nullptr};
+    const proto::ProtoString* mvDataKey_{nullptr};
+    const proto::ProtoString* mvStartKey_{nullptr};
+    const proto::ProtoString* mvStopKey_{nullptr};
+    const proto::ProtoString* localsMappingKey_{nullptr};
     const proto::ProtoString* isSuperProxyString{nullptr};
     const proto::ProtoString* pyGetAttrHandlerString_{nullptr};
     const proto::ProtoString* getattrDunderString{nullptr};

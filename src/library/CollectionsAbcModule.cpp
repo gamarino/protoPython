@@ -179,7 +179,7 @@ std::vector<std::string> abcMro(const std::string& name) {
 }
 
 const proto::ProtoString* stateKey(proto::ProtoContext* ctx) {
-    return PythonEnvironment::getInternedString(ctx, "__abc_state__");
+    return PythonEnvironment::getInternedString(ctx, "\001__abc_state__");
 }
 const proto::ProtoString* registryKey(proto::ProtoContext* ctx) {
     return PythonEnvironment::getInternedString(ctx, "registry");
@@ -773,7 +773,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         const proto::ProtoString* s_name = env ? env->getNameString() : PythonEnvironment::getInternedString(ctx, "__name__");
         const proto::ProtoString* s_class = env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
         const proto::ProtoString* s_register = PythonEnvironment::getInternedString(ctx, "register");
-        const proto::ProtoString* s_is_py_class = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
+        const proto::ProtoString* s_is_py_class = PythonEnvironment::getInternedString(ctx, "\001__is_python_class__");
 
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_register, ctx->fromMethod(abc, py_abc_register)));
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_name, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx)));
@@ -918,7 +918,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_collections_abc")->asObject(ctx));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__loader__"), PROTO_NONE); 
-    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__executed__"), PROTO_TRUE);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "\001__executed__"), PROTO_TRUE);
 
     // The class bodies' attributes; CPython's methods arrive on first use.
     if (env) {

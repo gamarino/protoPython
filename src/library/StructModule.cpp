@@ -153,7 +153,7 @@ static const proto::ProtoObject* make_bytes_obj(proto::ProtoContext* ctx, const 
     const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
         data.data(), static_cast<proto::proto_ulong>(data.size()));
     obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
-        env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
+        env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "\001__data__"),
         bb->asObject(ctx)));
     return obj;
 }
@@ -172,9 +172,6 @@ static bool extract_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* ob
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
-        const proto::ProtoObject* mv = obj->getAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "__mv_data__"));
-        if (mv && mv != PROTO_NONE && mv != obj) return extract_bytes(ctx, mv, out);
         const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
         if (data && data != PROTO_NONE && data != obj) {
             if (const proto::ProtoByteBuffer* bb = data->asByteBuffer(ctx)) {

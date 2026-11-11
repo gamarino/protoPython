@@ -27,7 +27,7 @@ static bool extractStringOrBytes(
     if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* dataKey = env ? env->getDataString()
-        : PythonEnvironment::getInternedString(ctx, "__data__");
+        : PythonEnvironment::getInternedString(ctx, "\001__data__");
     const proto::ProtoObject* d = obj->getAttribute(ctx, dataKey);
     if (!d) return false;
     if (d->isByteBuffer(ctx)) {

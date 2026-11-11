@@ -43,7 +43,7 @@ bool bytesOf(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::strin
     if (!bb) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         const proto::ProtoObject* data = obj->getAttribute(ctx,
-            env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"));
+            env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "\001__data__"));
         if (data && data != PROTO_NONE) bb = data->asByteBuffer(ctx);
     }
     if (!bb) return false;
@@ -70,7 +70,7 @@ const proto::ProtoObject* makeBytes(proto::ProtoContext* ctx, const void* data, 
     const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
         static_cast<const char*>(data), static_cast<proto::proto_ulong>(n));
     return obj->setAttribute(ctx,
-        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"),
+        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "\001__data__"),
         bb->asObject(ctx));
 }
 

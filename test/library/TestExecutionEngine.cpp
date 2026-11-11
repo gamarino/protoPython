@@ -341,7 +341,7 @@ TEST(ExecutionEngineTest, BuildList) {
     proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, listToTuple(&ctx, constants), listToTuple(&ctx, bytecode), nullptr, frame);
     ASSERT_NE(result, nullptr);
-    const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__data__"));
+    const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "\001__data__"));
     ASSERT_NE(data, nullptr);
     const proto::ProtoList* list = data->asList(&ctx);
     ASSERT_NE(list, nullptr);
@@ -392,10 +392,10 @@ TEST(ExecutionEngineTest, BuildMap) {
     proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, listToTuple(&ctx, constants), listToTuple(&ctx, bytecode), nullptr, frame);
     ASSERT_NE(result, nullptr);
-    const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__data__"));
+    const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "\001__data__"));
     ASSERT_NE(data, nullptr);
     ASSERT_NE(data->asSparseList(&ctx), nullptr);
-    const proto::ProtoObject* keys = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__keys__"));
+    const proto::ProtoObject* keys = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "\001__keys__"));
     ASSERT_NE(keys, nullptr);
     ASSERT_NE(keys->asList(&ctx), nullptr);
     const proto::ProtoList* keysList = keys->asList(&ctx);
@@ -1195,7 +1195,7 @@ TEST(ExecutionEngineTest, CompiledListLiteral) {
     ASSERT_NE(result, nullptr);
     ASSERT_NE(result, PROTO_NONE);
     const proto::ProtoObject* data = result->getAttribute(&ctx,
-        proto::ProtoString::fromUTF8String(&ctx, "__data__"));
+        proto::ProtoString::fromUTF8String(&ctx, "\001__data__"));
     ASSERT_NE(data, nullptr);
     const proto::ProtoList* list = data->asList(&ctx);
     ASSERT_NE(list, nullptr);

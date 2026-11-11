@@ -25,7 +25,7 @@ const proto::ProtoObject* newStructSequence(
         obj = obj->setAttribute(ctx, env->getClassString(), env->getTuplePrototype());
     }
     obj = obj->setAttribute(ctx,
-        env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
+        env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "\001__data__"),
         visible->asObject(ctx));
     for (const StructSequenceField& field : fields) {
         if (!field.name) continue;

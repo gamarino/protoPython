@@ -33,6 +33,7 @@ add_library(protoPython SHARED
     TimeModule.cpp
     BuiltinsModule.cpp
     BytearrayType.cpp
+    MemoryviewType.cpp
     IOModule.cpp
     CollectionsModule.cpp
     ExceptionsModule.cpp

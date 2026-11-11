@@ -32,7 +32,7 @@ static double toDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj) 
         }
     }
     /* Handle Python-style __data__ wrapper (e.g. float/double stored in __data__) */
-    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
+    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__data__"));
     if (data && data != PROTO_NONE) {
         if (data->isDouble(ctx)) return data->asDouble(ctx);
         if (data->isInteger(ctx)) {
@@ -394,8 +394,8 @@ static const proto::ProtoObject* py_dist(
         const proto::ProtoObject* pb = posArgs->getAt(ctx, 1);
         const proto::ProtoList* la = nullptr;
         const proto::ProtoList* lb = nullptr;
-        const proto::ProtoObject* da = pa->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
-        const proto::ProtoObject* db = pb->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
+        const proto::ProtoObject* da = pa->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__data__"));
+        const proto::ProtoObject* db = pb->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__data__"));
         if (da && ::protoPython::listStorage(ctx, da)) la = ::protoPython::listStorage(ctx, da);
         else if (::protoPython::listStorage(ctx, pa)) la = ::protoPython::listStorage(ctx, pa);
         if (db && ::protoPython::listStorage(ctx, db)) lb = ::protoPython::listStorage(ctx, db);
@@ -422,7 +422,7 @@ static long long getLongSafe(proto::ProtoContext* ctx, const proto::ProtoObject*
     if (obj->isInteger(ctx)) {
         try { return obj->asLong(ctx); } catch (...) { return 0; }
     }
-    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
+    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__data__"));
     if (data && data != PROTO_NONE && data->isInteger(ctx)) {
         try { return data->asLong(ctx); } catch (...) { return 0; }
     }
@@ -570,7 +570,7 @@ static const proto::ProtoObject* py_prod(
     const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* da = iterable->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
+    const proto::ProtoObject* da = iterable->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__data__"));
     if (!da || !::protoPython::listStorage(ctx, da)) return PROTO_NONE;
     const proto::ProtoList* list = ::protoPython::listStorage(ctx, da);
     int sz = static_cast<int>(list->getSize(ctx));
@@ -618,8 +618,8 @@ static const proto::ProtoObject* py_sumprod(
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* b = posArgs->getAt(ctx, 1);
-    const proto::ProtoObject* da = a->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
-    const proto::ProtoObject* db = b->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
+    const proto::ProtoObject* da = a->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__data__"));
+    const proto::ProtoObject* db = b->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__data__"));
     if (!da || !db || !::protoPython::listStorage(ctx, da) || !::protoPython::listStorage(ctx, db)) return PROTO_NONE;
     const proto::ProtoList* la = ::protoPython::listStorage(ctx, da);
     const proto::ProtoList* lb = ::protoPython::listStorage(ctx, db);

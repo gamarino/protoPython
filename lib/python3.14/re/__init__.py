@@ -304,7 +304,6 @@ def purge():
 _special_chars_map = {i: '\\' + chr(i) for i in b'()[]{}?*+-|^$\\.&~# \t\n\r\v\f'}
 
 def escape(pattern):
-    print("RE INIT REACHED ESCAPE DEF")
     """
     Escape special characters in a string.
     """

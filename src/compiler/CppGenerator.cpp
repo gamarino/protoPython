@@ -188,7 +188,7 @@ const proto::ProtoObject* __moduleNamespace = nullptr;
 const proto::ProtoString* __moduleNsKeyCache = nullptr;
 
 const proto::ProtoString* __moduleNsKey(proto::ProtoContext* ctx) {
-    if (!__moduleNsKeyCache) __moduleNsKeyCache = protoPython::PythonEnvironment::getInternedString(ctx, "__module_ns__");
+    if (!__moduleNsKeyCache) __moduleNsKeyCache = protoPython::PythonEnvironment::getInternedString(ctx, "\001__module_ns__");
     return __moduleNsKeyCache;
 }
 
@@ -1438,8 +1438,8 @@ void CppGenerator::emitAssignName(const std::string& name, const std::string& va
     // through env->storeName to the current frame: the module namespace, or
     // the class namespace while a class body runs.  An internal name (a
     // method's storage key) is stored in the class namespace.
-    if (inClassBody_ && name.rfind("__protopyc_fs_", 0) == 0) {
-        *out_ << "env->storeName(\"" << name << "\", " << valueExpr << ")";
+    if (inClassBody_ && name.rfind("\001__protopyc_fs_", 0) == 0) {
+        *out_ << "env->storeName(\"" << escapeCppString(name) << "\", " << valueExpr << ")";
         return;
     }
     switch (nameKind(name)) {
@@ -1991,7 +1991,7 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
     // instance as `self`, and its storage is found through the instance's
     // class under this key (__methodStorage).
     const bool isMethod = oldInClassBody;
-    const std::string methodStorageKey = "__protopyc_fs_" + cppFuncName + "__";
+    const std::string methodStorageKey = "\001__protopyc_fs_" + cppFuncName + "__";
     // Zero-argument super() in the body binds to the first parameter of a
     // method; the qualified name of what the body defines continues this one.
     const std::string oldMethodSelfParam = methodSelfParam_;
@@ -2070,7 +2070,7 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
             // perennial: the key is looked up once.
             *out_ << "    static const proto::ProtoString* __fsKey = nullptr;\n";
             *out_ << "    if (!__isStorage && !__fsKey) __fsKey = protoPython::PythonEnvironment::getInternedString(__callerCtx, \""
-                  << methodStorageKey << "\");\n";
+                  << escapeCppString(methodStorageKey) << "\");\n";
             *out_ << "    const proto::ProtoObject* __fs = __isStorage ? self : __methodStorage(__callerCtx, self, __fsKey);\n";
         } else {
             *out_ << "    const proto::ProtoObject* __fs = __isStorage ? self : nullptr;\n";

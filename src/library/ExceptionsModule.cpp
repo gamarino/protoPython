@@ -684,7 +684,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
             return nullptr;
         }
         const proto::ProtoString* notesS = PythonEnvironment::getInternedString(ctx, "__notes__");
-        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__");
+        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "\001__data__");
         const proto::ProtoObject* notesObj = self->getAttribute(ctx, notesS);
         const proto::ProtoList* underlying = nullptr;
         if (notesObj && notesObj != PROTO_NONE) {

@@ -14,11 +14,19 @@ __all__ = [
     "latin_1_encode", "latin_1_decode",
     "ascii_encode", "ascii_decode",
     "charmap_encode", "charmap_decode", "charmap_build",
+    "utf_16_encode", "utf_16_decode", "utf_16_le_encode", "utf_16_le_decode",
+    "utf_16_be_encode", "utf_16_be_decode", "utf_16_ex_decode",
+    "utf_32_encode", "utf_32_decode", "utf_32_le_encode", "utf_32_le_decode",
+    "utf_32_be_encode", "utf_32_be_decode", "utf_32_ex_decode",
+    "utf_7_encode", "utf_7_decode",
     "raw_unicode_escape_encode", "raw_unicode_escape_decode",
     "unicode_escape_encode", "unicode_escape_decode",
     "strict_errors", "ignore_errors", "replace_errors",
     "xmlcharrefreplace_errors", "backslashreplace_errors", "namereplace_errors",
+    "surrogateescape_errors", "surrogatepass_errors",
 ]
+
+import sys as _sys
 
 _search_path = []
 _search_cache = {}
@@ -181,16 +189,16 @@ def namereplace_errors(exc):
 
 def surrogateescape_errors(exc):
     if isinstance(exc, UnicodeDecodeError):
-        data = exc.object[exc.start:exc.end]
-        if all(b >= 128 for b in data[:4]):
-            consumed = 0
-            out = []
-            for b in data[:4]:
-                if b < 128:
-                    break
-                out.append(chr(0xDC00 + b))
-                consumed += 1
-            return (''.join(out), exc.start + consumed)
+        # As CPython: up to four bytes of the range, stopping at the first
+        # ASCII byte; an error that starts with an ASCII byte is re-raised.
+        out = []
+        for b in exc.object[exc.start:exc.end][:4]:
+            if b < 128:
+                break
+            out.append(chr(0xDC00 + b))
+        if out:
+            return (''.join(out), exc.start + len(out))
+        raise exc
     elif isinstance(exc, UnicodeEncodeError):
         out = bytearray()
         for c in exc.object[exc.start:exc.end]:
@@ -203,12 +211,69 @@ def surrogateescape_errors(exc):
         "don't know how to handle %s in error callback" % type(exc).__name__)
 
 
+def _surrogatepass_unit(encoding):
+    # (unit size, byte order) of the UTF codec an exception names; None for
+    # a codec surrogatepass does not apply to.
+    e = encoding.lower().replace('_', '-')
+    if e in ('utf-8', 'utf8'):
+        return (1, None)
+    for prefix, size in (('utf-16', 2), ('utf-32', 4)):
+        if e == prefix:
+            return (size, 'little' if _sys.byteorder == 'little' else 'big')
+        if e == prefix + '-le':
+            return (size, 'little')
+        if e == prefix + '-be':
+            return (size, 'big')
+    return None
+
+
+def surrogatepass_errors(exc):
+    """Encode or decode lone surrogates as UTF-8/16/32 code units."""
+    if isinstance(exc, UnicodeEncodeError):
+        unit = _surrogatepass_unit(exc.encoding)
+        if unit is None:
+            raise exc
+        out = bytearray()
+        for c in exc.object[exc.start:exc.end]:
+            n = ord(c)
+            if not 0xD800 <= n <= 0xDFFF:
+                raise exc
+            if unit[0] == 1:
+                out += bytes((0xE0 | (n >> 12), 0x80 | ((n >> 6) & 0x3F), 0x80 | (n & 0x3F)))
+            else:
+                out += n.to_bytes(unit[0], unit[1])
+        return (bytes(out), exc.end)
+    if isinstance(exc, UnicodeDecodeError):
+        unit = _surrogatepass_unit(exc.encoding)
+        if unit is None:
+            raise exc
+        data = exc.object
+        p = exc.start
+        if unit[0] == 1:
+            b = data[p:p + 3]
+            if (len(b) == 3 and b[0] & 0xF0 == 0xE0 and b[1] & 0xC0 == 0x80
+                    and b[2] & 0xC0 == 0x80):
+                n = ((b[0] & 0x0F) << 12) | ((b[1] & 0x3F) << 6) | (b[2] & 0x3F)
+                if 0xD800 <= n <= 0xDFFF:
+                    return (chr(n), p + 3)
+            raise exc
+        b = data[p:p + unit[0]]
+        if len(b) == unit[0]:
+            n = int.from_bytes(b, unit[1])
+            if 0xD800 <= n <= 0xDFFF:
+                return (chr(n), p + unit[0])
+        raise exc
+    raise exc if isinstance(exc, UnicodeError) else TypeError(
+        "don't know how to handle %s in error callback" % type(exc).__name__)
+
+
 for _name, _handler in (('strict', strict_errors), ('ignore', ignore_errors),
                         ('replace', replace_errors),
                         ('xmlcharrefreplace', xmlcharrefreplace_errors),
                         ('backslashreplace', backslashreplace_errors),
                         ('namereplace', namereplace_errors),
-                        ('surrogateescape', surrogateescape_errors)):
+                        ('surrogateescape', surrogateescape_errors),
+                        ('surrogatepass', surrogatepass_errors)):
     _error_registry[_name] = _handler
 del _name, _handler
 
@@ -402,6 +467,407 @@ def raw_unicode_escape_decode(data, errors=None, final=True):
 
 def unicode_escape_decode(data, errors=None, final=True):
     return _escape_decode(data, errors, False, 'unicodeescape')
+
+
+# --- UTF-16 and UTF-32 ---------------------------------------------------------
+#
+# Written in Python, with CPython's error positions and reasons; an error
+# handler sees the same UnicodeError CPython's would.
+
+def _native_order():
+    return -1 if _sys.byteorder == 'little' else 1
+
+
+def _utf_encode(s, errors, size, order, name):
+    # order: -1 little, 1 big. Surrogates are errors (surrogatepass passes them).
+    endian = 'little' if order < 0 else 'big'
+    out = bytearray()
+    handler = None
+    i = 0
+    n = len(s)
+    while i < n:
+        cp = ord(s[i])
+        if 0xD800 <= cp <= 0xDFFF:
+            j = i + 1
+            while j < n and 0xD800 <= ord(s[j]) <= 0xDFFF:
+                j += 1
+            if handler is None:
+                handler = lookup_error(_errors(errors))
+            rep, pos = handler(UnicodeEncodeError(name, s, i, j, 'surrogates not allowed'))
+            if isinstance(rep, str):
+                for c in rep:
+                    if 0xD800 <= ord(c) <= 0xDFFF:
+                        raise UnicodeEncodeError(name, s, i, j, 'surrogates not allowed')
+                    out += _utf_unit_bytes(ord(c), size, endian)
+            else:
+                rep = bytes(rep)
+                if len(rep) % size:
+                    raise UnicodeEncodeError(name, s, i, j, 'surrogates not allowed')
+                out += rep
+            if pos < 0:
+                pos += n
+            if not 0 <= pos <= n:
+                raise IndexError('position %d from error handler out of bounds' % pos)
+            i = pos
+            continue
+        out += _utf_unit_bytes(cp, size, endian)
+        i += 1
+    return bytes(out)
+
+
+def _utf_unit_bytes(cp, size, endian):
+    if size == 4 or cp < 0x10000:
+        return cp.to_bytes(size, endian)
+    cp -= 0x10000
+    return (0xD800 | (cp >> 10)).to_bytes(2, endian) + (0xDC00 | (cp & 0x3FF)).to_bytes(2, endian)
+
+
+def _bom_order(data, size):
+    # -1 / 1 for a little / big endian BOM at the start, 0 for none.
+    if size == 2:
+        if data[:2] == b'\xff\xfe':
+            return -1
+        if data[:2] == b'\xfe\xff':
+            return 1
+    else:
+        if data[:4] == b'\xff\xfe\x00\x00':
+            return -1
+        if data[:4] == b'\x00\x00\xfe\xff':
+            return 1
+    return 0
+
+
+def _utf16_decode(data, errors, order, final, name, i=0):
+    # Returns (text, consumed) from data[i:] in byte order `order` (-1 / 1).
+    endian = 'little' if order < 0 else 'big'
+    out = []
+    handler = None
+    n = len(data)
+
+    def fail(start, end, reason):
+        nonlocal handler
+        if handler is None:
+            handler = lookup_error(_errors(errors))
+        rep, pos = handler(UnicodeDecodeError(name, data, start, end, reason))
+        out.append(rep)
+        if pos < 0:
+            pos += n
+        if not 0 <= pos <= n:
+            raise IndexError('position %d from error handler out of bounds' % pos)
+        return pos
+
+    while i < n:
+        if n - i < 2:
+            if not final:
+                break
+            i = fail(i, n, 'truncated data')
+            continue
+        u = int.from_bytes(data[i:i + 2], endian)
+        if u < 0xD800 or u > 0xDFFF:
+            out.append(chr(u))
+            i += 2
+            continue
+        if u >= 0xDC00:
+            i = fail(i, i + 2, 'illegal encoding')
+            continue
+        if n - i < 4:
+            if not final:
+                break
+            i = fail(i, n, 'unexpected end of data')
+            continue
+        u2 = int.from_bytes(data[i + 2:i + 4], endian)
+        if 0xDC00 <= u2 <= 0xDFFF:
+            out.append(chr(0x10000 + ((u - 0xD800) << 10) + (u2 - 0xDC00)))
+            i += 4
+            continue
+        i = fail(i, i + 2, 'illegal UTF-16 surrogate')
+    return (''.join(out), i)
+
+
+def _utf32_decode(data, errors, order, final, name, i=0):
+    endian = 'little' if order < 0 else 'big'
+    out = []
+    handler = None
+    n = len(data)
+
+    def fail(start, end, reason):
+        nonlocal handler
+        if handler is None:
+            handler = lookup_error(_errors(errors))
+        rep, pos = handler(UnicodeDecodeError(name, data, start, end, reason))
+        out.append(rep)
+        if pos < 0:
+            pos += n
+        if not 0 <= pos <= n:
+            raise IndexError('position %d from error handler out of bounds' % pos)
+        return pos
+
+    while i < n:
+        if n - i < 4:
+            if not final:
+                break
+            i = fail(i, n, 'truncated data')
+            continue
+        cp = int.from_bytes(data[i:i + 4], endian)
+        if cp > 0x10FFFF:
+            i = fail(i, i + 4, 'code point not in range(0x110000)')
+            continue
+        if 0xD800 <= cp <= 0xDFFF:
+            i = fail(i, i + 4, 'code point in surrogate code point range(0xd800, 0xe000)')
+            continue
+        out.append(chr(cp))
+        i += 4
+    return (''.join(out), i)
+
+
+def _utf_ex_decode(data, errors, byteorder, final, size):
+    # (text, consumed, byteorder): a BOM decides the order when byteorder is 0.
+    data = bytes(data)
+    start = 0
+    if byteorder == 0:
+        if len(data) < size and not final and (
+                (size == 2 and data in (b'\xff', b'\xfe')) or
+                (size == 4 and (b'\xff\xfe\x00\x00'.startswith(data) or
+                                b'\x00\x00\xfe\xff'.startswith(data)))):
+            return ('', 0, 0)
+        bom = _bom_order(data, size)
+        if bom:
+            byteorder = bom
+            start = size
+    order = byteorder if byteorder else _native_order()
+    suffix = '-le' if order < 0 else '-be'
+    name = ('utf-16' if size == 2 else 'utf-32') + suffix
+    decode = _utf16_decode if size == 2 else _utf32_decode
+    text, consumed = decode(data, errors, order, final, name, start)
+    return (text, consumed, byteorder)
+
+
+def utf_16_encode(s, errors=None, byteorder=0):
+    if byteorder == 0:
+        order = _native_order()
+        bom = b'\xff\xfe' if order < 0 else b'\xfe\xff'
+        return (bom + _utf_encode(s, errors, 2, order, 'utf-16'), len(s))
+    return (_utf_encode(s, errors, 2, -1 if byteorder < 0 else 1, 'utf-16'), len(s))
+
+
+def utf_16_le_encode(s, errors=None):
+    return (_utf_encode(s, errors, 2, -1, 'utf-16-le'), len(s))
+
+
+def utf_16_be_encode(s, errors=None):
+    return (_utf_encode(s, errors, 2, 1, 'utf-16-be'), len(s))
+
+
+def utf_16_decode(data, errors=None, final=False):
+    text, consumed, _ = _utf_ex_decode(data, errors, 0, final, 2)
+    return (text, consumed)
+
+
+def utf_16_le_decode(data, errors=None, final=False):
+    return _utf16_decode(bytes(data), errors, -1, final, 'utf-16-le')
+
+
+def utf_16_be_decode(data, errors=None, final=False):
+    return _utf16_decode(bytes(data), errors, 1, final, 'utf-16-be')
+
+
+def utf_16_ex_decode(data, errors=None, byteorder=0, final=False):
+    return _utf_ex_decode(data, errors, byteorder, final, 2)
+
+
+def utf_32_encode(s, errors=None, byteorder=0):
+    if byteorder == 0:
+        order = _native_order()
+        bom = b'\xff\xfe\x00\x00' if order < 0 else b'\x00\x00\xfe\xff'
+        return (bom + _utf_encode(s, errors, 4, order, 'utf-32'), len(s))
+    return (_utf_encode(s, errors, 4, -1 if byteorder < 0 else 1, 'utf-32'), len(s))
+
+
+def utf_32_le_encode(s, errors=None):
+    return (_utf_encode(s, errors, 4, -1, 'utf-32-le'), len(s))
+
+
+def utf_32_be_encode(s, errors=None):
+    return (_utf_encode(s, errors, 4, 1, 'utf-32-be'), len(s))
+
+
+def utf_32_decode(data, errors=None, final=False):
+    text, consumed, _ = _utf_ex_decode(data, errors, 0, final, 4)
+    return (text, consumed)
+
+
+def utf_32_le_decode(data, errors=None, final=False):
+    return _utf32_decode(bytes(data), errors, -1, final, 'utf-32-le')
+
+
+def utf_32_be_decode(data, errors=None, final=False):
+    return _utf32_decode(bytes(data), errors, 1, final, 'utf-32-be')
+
+
+def utf_32_ex_decode(data, errors=None, byteorder=0, final=False):
+    return _utf_ex_decode(data, errors, byteorder, final, 4)
+
+
+# --- UTF-7 (RFC 2152), CPython's encoder and decoder ----------------------------
+
+_B64 = b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+_B64_VALUE = {c: i for i, c in enumerate(_B64)}
+# CPython's utf7_category: 0 direct, 1 optional direct, 2 whitespace, 3 special.
+_UTF7_DIRECT = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'(),-./:?")
+_UTF7_OPTIONAL = set(b'!"#$%&*;<=>@[]^_`{|}')
+_UTF7_SPACE = set(b' \t\r\n')
+
+
+def _utf7_encode_direct(cp):
+    return 0 < cp < 128 and (cp in _UTF7_DIRECT or cp in _UTF7_OPTIONAL or cp in _UTF7_SPACE)
+
+
+def utf_7_encode(s, errors=None):
+    out = bytearray()
+    in_shift = False
+    bits = 0
+    buf = 0
+
+    def put(value):
+        nonlocal bits, buf
+        bits += 16
+        buf = (buf << 16) | value
+        while bits >= 6:
+            out.append(_B64[(buf >> (bits - 6)) & 0x3F])
+            bits -= 6
+        buf &= (1 << bits) - 1
+
+    for c in s:
+        cp = ord(c)
+        if in_shift:
+            if _utf7_encode_direct(cp):
+                if bits:
+                    out.append(_B64[(buf << (6 - bits)) & 0x3F])
+                    buf = 0
+                    bits = 0
+                in_shift = False
+                if cp in _B64_VALUE or cp == 0x2D:
+                    out.append(0x2D)
+                out.append(cp)
+                continue
+        else:
+            if cp == 0x2B:
+                out += b'+-'
+                continue
+            if _utf7_encode_direct(cp):
+                out.append(cp)
+                continue
+            out.append(0x2B)
+            in_shift = True
+        if cp >= 0x10000:
+            cp -= 0x10000
+            put(0xD800 | (cp >> 10))
+            put(0xDC00 | (cp & 0x3FF))
+        else:
+            put(cp)
+    if bits:
+        out.append(_B64[(buf << (6 - bits)) & 0x3F])
+    if in_shift:
+        out.append(0x2D)
+    return (bytes(out), len(s))
+
+
+def utf_7_decode(data, errors=None, final=False):
+    data = bytes(data)
+    n = len(data)
+    out = []
+    handler = None
+    in_shift = False
+    bits = 0
+    buf = 0
+    surrogate = 0
+    shift_out_start = 0
+    start = 0
+    i = 0
+
+    def fail(s0, e0, reason):
+        nonlocal handler
+        if handler is None:
+            handler = lookup_error(_errors(errors))
+        rep, pos = handler(UnicodeDecodeError('utf7', data, s0, e0, reason))
+        out.append(rep)
+        if pos < 0:
+            pos += n
+        if not 0 <= pos <= n:
+            raise IndexError('position %d from error handler out of bounds' % pos)
+        return pos
+
+    while True:
+        while i < n:
+            ch = data[i]
+            if in_shift:
+                if ch in _B64_VALUE:
+                    buf = (buf << 6) | _B64_VALUE[ch]
+                    bits += 6
+                    i += 1
+                    if bits >= 16:
+                        unit = buf >> (bits - 16)
+                        bits -= 16
+                        buf &= (1 << bits) - 1
+                        if surrogate:
+                            if 0xDC00 <= unit <= 0xDFFF:
+                                out.append(chr(0x10000 + ((surrogate - 0xD800) << 10) + (unit - 0xDC00)))
+                                surrogate = 0
+                                continue
+                            out.append(chr(surrogate))
+                            surrogate = 0
+                        if 0xD800 <= unit <= 0xDBFF:
+                            surrogate = unit
+                        else:
+                            out.append(chr(unit))
+                    continue
+                in_shift = False
+                if bits >= 6:
+                    i += 1
+                    i = fail(start, i, 'partial character in shift sequence')
+                    continue
+                if bits > 0 and buf != 0:
+                    i += 1
+                    i = fail(start, i, 'non-zero padding bits in shift sequence')
+                    continue
+                if surrogate and ch <= 127 and ch != 0x2B:
+                    out.append(chr(surrogate))
+                surrogate = 0
+                if ch == 0x2D:
+                    i += 1
+            elif ch == 0x2B:
+                start = i
+                i += 1
+                if i < n and data[i] == 0x2D:
+                    i += 1
+                    out.append('+')
+                elif i < n and data[i] not in _B64_VALUE:
+                    i += 1
+                    i = fail(start, i, 'ill-formed sequence')
+                else:
+                    in_shift = True
+                    surrogate = 0
+                    shift_out_start = len(out)
+                    bits = 0
+                    buf = 0
+            elif ch <= 127:
+                i += 1
+                out.append(chr(ch))
+            else:
+                start = i
+                i += 1
+                i = fail(start, i, 'unexpected special character')
+        if in_shift and final:
+            in_shift = False
+            if surrogate or bits >= 6 or (bits > 0 and buf != 0):
+                i = fail(start, n, 'unterminated shift sequence')
+                if i < n:
+                    continue
+        break
+    if in_shift and not final:
+        del out[shift_out_start:]
+        return (''.join(out), start)
+    return (''.join(out), i)
 
 
 def charmap_build(decoding_table):

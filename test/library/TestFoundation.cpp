@@ -53,7 +53,7 @@ TEST_F(FoundationTest, ListAppend) {
     my_list->setAttribute(context, classS, env.getListPrototype());
     
     // 2. Initialize it with empty ProtoList in __data__
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
     my_list->setAttribute(context, dataName, context->newList()->asObject(context));
     
     // 3. Call append(42)
@@ -175,7 +175,7 @@ TEST_F(FoundationTest, BuiltinFunctions) {
     const proto::ProtoObject* my_list = context->newObject(true);
     my_list = my_list->addParent(context, env.getListPrototype());
     my_list->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), env.getListPrototype());
-    my_list->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newList()->appendLast(context, context->fromInteger(1))->asObject(context));
+    my_list->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newList()->appendLast(context, context->fromInteger(1))->asObject(context));
     
     const proto::ProtoObject* pyLen = env.resolve("len");
     ASSERT_NE(pyLen, nullptr);
@@ -341,7 +341,7 @@ TEST_F(FoundationTest, ListGetItemSetItem) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* my_list = context->newObject(true);
     my_list = my_list->addParent(context, env.getListPrototype());
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
     const proto::ProtoList* list = context->newList()
         ->appendLast(context, context->fromInteger(10))
         ->appendLast(context, context->fromInteger(20))
@@ -387,8 +387,8 @@ TEST_F(FoundationTest, DictSetItemLen) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* my_dict = context->newObject(true);
     my_dict = my_dict->addParent(context, env.getDictPrototype());
-    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
 
     const proto::ProtoString* setitemName = proto::ProtoString::fromUTF8String(context, "__setitem__");
     const proto::ProtoString* lenName = proto::ProtoString::fromUTF8String(context, "__len__");
@@ -424,7 +424,7 @@ TEST_F(FoundationTest, ListIterNext) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* my_list = context->newObject(true);
     my_list = my_list->addParent(context, env.getListPrototype());
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
     const proto::ProtoList* list = context->newList()
         ->appendLast(context, context->fromInteger(1))
         ->appendLast(context, context->fromInteger(2));
@@ -452,8 +452,8 @@ TEST_F(FoundationTest, DictIterKeys) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* my_dict = context->newObject(true);
     my_dict = my_dict->addParent(context, env.getDictPrototype());
-    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
 
     const proto::ProtoObject* pyIter = env.resolve("iter");
     const proto::ProtoObject* pyNext = env.resolve("next");
@@ -494,7 +494,7 @@ TEST_F(FoundationTest, ContainsDunder) {
 
     const proto::ProtoObject* my_list = context->newObject(true);
     my_list = my_list->addParent(context, env.getListPrototype());
-    const proto::ProtoString* listData = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* listData = proto::ProtoString::fromUTF8String(context, "\001__data__");
     const proto::ProtoList* list = context->newList()
         ->appendLast(context, context->fromInteger(5))
         ->appendLast(context, context->fromInteger(6));
@@ -508,7 +508,7 @@ TEST_F(FoundationTest, ContainsDunder) {
 
     const proto::ProtoObject* my_dict = context->newObject(true);
     my_dict = my_dict->addParent(context, env.getDictPrototype());
-    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
     const proto::ProtoObject* setitem = my_dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     ASSERT_NE(setitem, nullptr);
     const proto::ProtoObject* key = context->fromUTF8String("k");
@@ -527,7 +527,7 @@ TEST_F(FoundationTest, EqualsDunder) {
 
     const proto::ProtoObject* listObj = env.getListPrototype()->newChild(context, true);
     const proto::ProtoObject* listObj2 = context->newObject(true)->addParent(context, env.getListPrototype());
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
     const proto::ProtoList* list = context->newList()
         ->appendLast(context, context->fromInteger(1))
         ->appendLast(context, context->fromInteger(2));
@@ -542,10 +542,10 @@ TEST_F(FoundationTest, EqualsDunder) {
 
     const proto::ProtoObject* dict1 = context->newObject(true)->addParent(context, env.getDictPrototype());
     const proto::ProtoObject* dict2 = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dict1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    dict2->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    dict1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
-    dict2->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    dict1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
+    dict2->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
+    dict1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
+    dict2->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
     const proto::ProtoObject* setitem = dict1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     ASSERT_NE(setitem, nullptr);
     const proto::ProtoObject* key = context->fromUTF8String("k");
@@ -566,7 +566,7 @@ TEST_F(FoundationTest, OrderingDunder) {
 
     const proto::ProtoObject* list1 = context->newObject(true)->addParent(context, env.getListPrototype());
     const proto::ProtoObject* list2 = context->newObject(true)->addParent(context, env.getListPrototype());
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
     const proto::ProtoList* a = context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2));
     const proto::ProtoList* b = context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(3));
     list1->setAttribute(context, dataName, a->asObject(context));
@@ -588,7 +588,7 @@ TEST_F(FoundationTest, ReprStrDunder) {
     proto::ProtoContext* context = env.getContext();
 
     const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"),
                           context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->asObject(context));
     const proto::ProtoObject* listRepr = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
     ASSERT_NE(listRepr, nullptr);
@@ -600,8 +600,8 @@ TEST_F(FoundationTest, ReprStrDunder) {
     EXPECT_EQ(listStr, "[1, 2]");
 
     const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
     const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     ASSERT_NE(setitem, nullptr);
     const proto::ProtoObject* key = context->fromUTF8String("k");
@@ -623,19 +623,19 @@ TEST_F(FoundationTest, BoolDunder) {
     proto::ProtoContext* context = env.getContext();
 
     const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newList()->asObject(context));
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newList()->asObject(context));
     const proto::ProtoObject* listBool = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__bool__"));
     ASSERT_NE(listBool, nullptr);
     const proto::ProtoObject* listFalse = listBool->asMethod(context)(context, listObj, nullptr, nullptr, nullptr);
     EXPECT_EQ(listFalse, PROTO_FALSE);
 
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"),
                           context->newList()->appendLast(context, context->fromInteger(1))->asObject(context));
     const proto::ProtoObject* listTrue = listBool->asMethod(context)(context, listObj, nullptr, nullptr, nullptr);
     EXPECT_EQ(listTrue, PROTO_TRUE);
 
     const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
     const proto::ProtoObject* dictBool = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__bool__"));
     ASSERT_NE(dictBool, nullptr);
     const proto::ProtoObject* dictFalse = dictBool->asMethod(context)(context, dictObj, nullptr, nullptr, nullptr);
@@ -652,8 +652,8 @@ TEST_F(FoundationTest, BoolDunder) {
 TEST_F(FoundationTest, DictViews) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
     const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     ASSERT_NE(setitem, nullptr);
     const proto::ProtoObject* key = context->fromUTF8String("k");
@@ -682,7 +682,7 @@ TEST_F(FoundationTest, DictViews) {
 TEST_F(FoundationTest, DictGetSetDefault) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
     const proto::ProtoObject* getMethod = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "get"));
     const proto::ProtoObject* setdefaultMethod = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "setdefault"));
     ASSERT_NE(getMethod, nullptr);
@@ -705,7 +705,7 @@ TEST_F(FoundationTest, DictGetSetDefault) {
 TEST_F(FoundationTest, ListPopExtend) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"),
                           context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->asObject(context));
 
     const proto::ProtoObject* pop = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "pop"));
@@ -722,7 +722,7 @@ TEST_F(FoundationTest, ListPopExtend) {
     const proto::ProtoList* appendArgs2 = context->newList()->appendLast(context, context->fromInteger(4));
     append->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, appendArgs2)), nullptr);
 
-    const proto::ProtoObject* data = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+    const proto::ProtoObject* data = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"));
     const proto::ProtoList* list = data->asList(context);
     ASSERT_NE(list, nullptr);
     EXPECT_EQ(list->getSize(context), 3);
@@ -745,7 +745,7 @@ TEST_F(FoundationTest, LenStringTuple) {
     const proto::ProtoObject* tupleObj = context->newObject(true)->addParent(context, env.getTuplePrototype());
     const proto::ProtoList* tupleList = context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2));
     const proto::ProtoTuple* tuple = context->newTupleFromList(tupleList);
-    tupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), tuple->asObject(context));
+    tupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), tuple->asObject(context));
     const proto::ProtoList* tupleArgs = context->newList()->appendLast(context, tupleObj);
     const proto::ProtoObject* tupleLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, protoPython::argsView(proto::ProtoListArguments(context, tupleArgs)), nullptr);
     ASSERT_NE(tupleLen, nullptr);
@@ -761,7 +761,7 @@ TEST_F(FoundationTest, TupleDunders) {
         ->appendLast(context, context->fromInteger(20))
         ->appendLast(context, context->fromInteger(30));
     const proto::ProtoTuple* tuple = context->newTupleFromList(tupleList);
-    tupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), tuple->asObject(context));
+    tupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), tuple->asObject(context));
 
     const proto::ProtoString* pyGetItem = proto::ProtoString::fromUTF8String(context, "__getitem__");
     const proto::ProtoString* pyIter = proto::ProtoString::fromUTF8String(context, "__iter__");
@@ -813,7 +813,7 @@ TEST_F(FoundationTest, TupleDunders) {
 
     const proto::ProtoObject* emptyTupleObj = context->newObject(true)->addParent(context, env.getTuplePrototype());
     const proto::ProtoTuple* emptyTuple = context->newTupleFromList(context->newList());
-    emptyTupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), emptyTuple->asObject(context));
+    emptyTupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), emptyTuple->asObject(context));
     const proto::ProtoObject* emptyBool = boolM->asMethod(context)(context, emptyTupleObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     EXPECT_EQ(emptyBool, PROTO_FALSE);
 }
@@ -829,10 +829,10 @@ TEST_F(FoundationTest, SortedBuiltin) {
         ->appendLast(context, context->fromInteger(1))
         ->appendLast(context, context->fromInteger(2));
     const proto::ProtoObject* listObj = env.getListPrototype()->newChild(context, true);
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), inputList->asObject(context));
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), inputList->asObject(context));
     const proto::ProtoObject* result = env.callObject(pySorted, {listObj});
     ASSERT_NE(result, nullptr);
-    const proto::ProtoObject* data = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+    const proto::ProtoObject* data = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"));
     ASSERT_NE(data, nullptr);
     const proto::ProtoList* outList = data->asList(context);
     ASSERT_NE(outList, nullptr);
@@ -876,14 +876,14 @@ TEST_F(FoundationTest, FilterBuiltin) {
 TEST_F(FoundationTest, DictPopitem) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
     const proto::ProtoObject* key = context->fromUTF8String("a");
     const proto::ProtoObject* val = context->fromInteger(42);
     const proto::ProtoList* keys = context->newList()->appendLast(context, key);
     const proto::ProtoSparseList* data = context->newSparseList()->setAt(context, key->getHash(context), val);
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), keys->asObject(context));
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), data->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), keys->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), data->asObject(context));
     const proto::ProtoObject* popitemM = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "popitem"));
     ASSERT_NE(popitemM, nullptr);
     const proto::ProtoObject* pair = popitemM->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
@@ -895,7 +895,7 @@ TEST_F(FoundationTest, DictPopitem) {
     tup->getAt(context, 0)->asString(context)->toUTF8String(context, k);
     EXPECT_EQ(k, "a");
     EXPECT_EQ(tup->getAt(context, 1)->asLong(context), 42);
-    const proto::ProtoObject* keysAfter = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"));
+    const proto::ProtoObject* keysAfter = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"));
     EXPECT_EQ(keysAfter->asList(context)->getSize(context), 0u);
 }
 
@@ -974,11 +974,11 @@ TEST_F(FoundationTest, MapBuiltin) {
 static const proto::ProtoString* strFromResult(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return nullptr;
     if (obj->isString(ctx)) return obj->asString(ctx);
-    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "\001__data__"));
     if (data && data != PROTO_NONE) {
         if (data->isString(ctx)) return data->asString(ctx);
         /* Handle nested __data__ (double-wrapped Python str). */
-        const proto::ProtoObject* inner = data->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+        const proto::ProtoObject* inner = data->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "\001__data__"));
         if (inner && inner != PROTO_NONE && inner->isString(ctx)) return inner->asString(ctx);
     }
     return nullptr;
@@ -1022,7 +1022,7 @@ TEST_F(FoundationTest, StringDunders) {
     ASSERT_NE(upperM, nullptr);
     ASSERT_NE(lowerM, nullptr);
     const proto::ProtoObject* wrapped = context->newObject(true)->addParent(context, strPrototype);
-    wrapped->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("HeLLo"));
+    wrapped->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->fromUTF8String("HeLLo"));
     /* lower() result: strFromResult returns null in some contexts (v48 TODO). */
     const proto::ProtoObject* l = lowerM->asMethod(context)(context, wrapped, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(l, nullptr);
@@ -1053,23 +1053,23 @@ TEST_F(FoundationTest, StringDunders) {
     const proto::ProtoObject* isdigitM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "isdigit"));
     ASSERT_NE(isdigitM, nullptr);
     const proto::ProtoObject* digits = context->newObject(true)->addParent(context, strPrototype);
-    digits->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("12345"));
+    digits->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->fromUTF8String("12345"));
     EXPECT_EQ(isdigitM->asMethod(context)(context, digits, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr), PROTO_TRUE);
     const proto::ProtoObject* mixed = context->newObject(true)->addParent(context, strPrototype);
-    mixed->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("12a45"));
+    mixed->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->fromUTF8String("12a45"));
     EXPECT_EQ(isdigitM->asMethod(context)(context, mixed, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr), PROTO_FALSE);
 
     const proto::ProtoObject* isupperM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "isupper"));
     ASSERT_NE(isupperM, nullptr);
     const proto::ProtoObject* upperStr = context->newObject(true)->addParent(context, strPrototype);
-    upperStr->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("ABC"));
+    upperStr->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->fromUTF8String("ABC"));
     EXPECT_EQ(isupperM->asMethod(context)(context, upperStr, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr), PROTO_TRUE);
     EXPECT_EQ(isupperM->asMethod(context)(context, wrapped, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr), PROTO_FALSE);
 
     const proto::ProtoObject* splitlinesM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "splitlines"));
     ASSERT_NE(splitlinesM, nullptr);
     const proto::ProtoObject* linesStr = context->newObject(true)->addParent(context, strPrototype);
-    linesStr->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("a\nb\nc"));
+    linesStr->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->fromUTF8String("a\nb\nc"));
     const proto::ProtoObject* lines = splitlinesM->asMethod(context)(context, linesStr, nullptr, protoPython::argsView(proto::ProtoArguments(nullptr, 0)), nullptr);
     ASSERT_NE(lines, nullptr);
     EXPECT_TRUE(lines->asList(context));
@@ -1083,7 +1083,7 @@ TEST_F(FoundationTest, BytesIndex) {
     // A bytes object keeps its octets in a ProtoByteBuffer under __data__.
     auto makeBytes = [&](const char* s) {
         const proto::ProtoObject* o = context->newObject(true)->addParent(context, bytesPrototype);
-        o->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+        o->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"),
                         context->newByteBuffer(s, std::strlen(s))->asObject(context));
         return o;
     };
@@ -1102,8 +1102,8 @@ TEST_F(FoundationTest, ContainerExceptions) {
     proto::ProtoContext* context = env.getContext();
 
     const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
 
     const proto::ProtoObject* getitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__getitem__"));
     ASSERT_NE(getitem, nullptr);
@@ -1143,7 +1143,7 @@ TEST_F(FoundationTest, SetBasic) {
     proto::ProtoContext* context = env.getContext();
 
     const proto::ProtoObject* setObj = context->newObject(true)->addParent(context, env.getSetPrototype());
-    setObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), protoPython::PythonEnvironment::newSetStorage(context)->asObject(context));
+    setObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), protoPython::PythonEnvironment::newSetStorage(context)->asObject(context));
 
     const proto::ProtoObject* addM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "add"));
     const proto::ProtoObject* removeM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "remove"));
@@ -1205,7 +1205,7 @@ TEST_F(FoundationTest, SetUnion) {
     ASSERT_NE(copyM, nullptr);
 
     const proto::ProtoObject* set1 = context->newObject(true)->addParent(context, setPrototype);
-    set1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), protoPython::PythonEnvironment::newSetStorage(context)->asObject(context));
+    set1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), protoPython::PythonEnvironment::newSetStorage(context)->asObject(context));
     const proto::ProtoObject* addM = set1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "add"));
     ASSERT_NE(addM, nullptr);
     addM->asMethod(context)(context, set1, nullptr, protoPython::argsView(proto::ProtoListArguments(context, context->newList()->appendLast(context, context->fromInteger(1)))), nullptr);
@@ -1331,14 +1331,14 @@ TEST_F(FoundationTest, StrSplitMaxsplit) {
     const proto::ProtoObject* strPrototype = env.getStrPrototype();
     ASSERT_NE(strPrototype, nullptr);
     proto::ProtoObject* s = const_cast<proto::ProtoObject*>(context->newObject(true)->addParent(context, strPrototype));
-    s->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("a b c"));
+    s->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->fromUTF8String("a b c"));
     const proto::ProtoObject* splitM = s->getAttribute(context, proto::ProtoString::fromUTF8String(context, "split"));
     ASSERT_NE(splitM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String(" "))->appendLast(context, context->fromInteger(1));
     const proto::ProtoObject* result = splitM->asMethod(context)(context, s, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
-    ASSERT_TRUE(result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))->asList(context));
-    const proto::ProtoList* parts = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))->asList(context);
+    ASSERT_TRUE(result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"))->asList(context));
+    const proto::ProtoList* parts = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"))->asList(context);
     EXPECT_EQ(parts->getSize(context), 2u);  // maxsplit=1 -> ["a", "b c"]
 }
 
@@ -1452,7 +1452,7 @@ TEST_F(FoundationTest, MathDist) {
     ASSERT_NE(mathMod, nullptr);
     const proto::ProtoObject* distM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "dist"));
     ASSERT_NE(distM, nullptr);
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
     const proto::ProtoObject* p1 = context->newObject(true)->addParent(context, env.getListPrototype());
     p1->setAttribute(context, dataName,
         context->newList()->appendLast(context, context->fromInteger(0))->appendLast(context, context->fromInteger(0))->asObject(context));
@@ -1680,7 +1680,7 @@ TEST_F(FoundationTest, MathSumprod) {
     ASSERT_NE(mathMod, nullptr);
     const proto::ProtoObject* sumprodM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "sumprod"));
     ASSERT_NE(sumprodM, nullptr);
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
     const proto::ProtoObject* list1 = context->newObject(true)->addParent(context, env.getListPrototype());
     list1->setAttribute(context, dataName,
         context->newList()->appendLast(context, context->fromInteger(1))
@@ -1769,7 +1769,7 @@ TEST_F(FoundationTest, MathProd) {
     ASSERT_NE(mathMod, nullptr);
     const proto::ProtoObject* prodM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "prod"));
     ASSERT_NE(prodM, nullptr);
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
     const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
     listObj->setAttribute(context, dataName,
         context->newList()->appendLast(context, context->fromInteger(2))
@@ -1801,17 +1801,17 @@ TEST_F(FoundationTest, ListIaddOrRemoveprefix) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* listPrototype = env.getListPrototype();
     proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(context->newObject(true)->addParent(context, listPrototype));
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"),
         context->newList()->appendLast(context, context->fromInteger(1))->asObject(context));
     const proto::ProtoObject* iaddM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iadd__"));
     ASSERT_NE(iaddM, nullptr);
     const proto::ProtoObject* other = context->newObject(true)->addParent(context, listPrototype);
-    other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+    other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"),
         context->newList()->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromInteger(3))->asObject(context));
     const proto::ProtoList* args = context->newList()->appendLast(context, other);
     const proto::ProtoObject* result = iaddM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
-    const proto::ProtoObject* data = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+    const proto::ProtoObject* data = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"));
     ASSERT_NE(data, nullptr);
     ASSERT_TRUE(data->asList(context));
     EXPECT_EQ(data->asList(context)->getSize(context), 3u);
@@ -1837,8 +1837,8 @@ TEST_F(FoundationTest, OperatorInvert) {
 TEST_F(FoundationTest, DictUnion) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* dictProto = env.getDictPrototype();
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
-    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "\001__keys__");
     const proto::ProtoObject* d1 = context->newObject(true)->addParent(context, dictProto);
     d1->setAttribute(context, dataName, context->newSparseList()->asObject(context));
     d1->setAttribute(context, keysName, context->newList()->asObject(context));
@@ -1880,14 +1880,14 @@ TEST_F(FoundationTest, ListRepeat) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* listPrototype = env.getListPrototype();
     const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, listPrototype);
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"),
         context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->asObject(context));
     const proto::ProtoObject* mulM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mul__"));
     ASSERT_NE(mulM, nullptr);
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(3));
     const proto::ProtoObject* result = mulM->asMethod(context)(context, listObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args)), nullptr);
     ASSERT_NE(result, nullptr);
-    const proto::ProtoObject* data = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+    const proto::ProtoObject* data = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"));
     ASSERT_NE(data, nullptr);
     ASSERT_TRUE(data->asList(context));
     EXPECT_EQ(data->asList(context)->getSize(context), 6u);
@@ -1944,7 +1944,7 @@ TEST_F(FoundationTest, SetattrAndCallable) {
 TEST_F(FoundationTest, ListIaddAndDictIor) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* listProto = env.getListPrototype();
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "\001__data__");
     proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(context->newObject(true)->addParent(context, listProto));
     listObj->setAttribute(context, dataName, context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->asObject(context));
     const proto::ProtoObject* otherList = context->newObject(true)->addParent(context, listProto);
@@ -1961,7 +1961,7 @@ TEST_F(FoundationTest, ListIaddAndDictIor) {
     EXPECT_EQ(data->asList(context)->getAt(context, 2)->asLong(context), 3);
 
     const proto::ProtoObject* dictProto = env.getDictPrototype();
-    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "\001__keys__");
     proto::ProtoObject* d1 = const_cast<proto::ProtoObject*>(context->newObject(true)->addParent(context, dictProto));
     d1->setAttribute(context, dataName, context->newSparseList()->asObject(context));
     d1->setAttribute(context, keysName, context->newList()->asObject(context));
@@ -1991,7 +1991,7 @@ TEST_F(FoundationTest, ItertoolsAccumulate) {
 
     const proto::ProtoObject* listPrototype = env.getListPrototype();
     const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, listPrototype);
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"),
         context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromInteger(3))->asObject(context));
     const proto::ProtoList* args = context->newList()->appendLast(context, listObj);
     const proto::ProtoObject* accIt = invokeCallable(context, accumulateM, itertoolsMod, protoPython::argsView(proto::ProtoListArguments(context, args)));
@@ -2024,7 +2024,7 @@ TEST_F(FoundationTest, ListInsertRemoveClear) {
     proto::ProtoContext* context = env.getContext();
 
     const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"),
         context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromInteger(3))->asObject(context));
 
     const proto::ProtoObject* insertM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "insert"));
@@ -2055,8 +2055,8 @@ TEST_F(FoundationTest, DictUpdateClearCopy) {
     proto::ProtoContext* context = env.getContext();
 
     const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
 
     const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     const proto::ProtoObject* update = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "update"));
@@ -2070,8 +2070,8 @@ TEST_F(FoundationTest, DictUpdateClearCopy) {
     setitem->asMethod(context)(context, dictObj, nullptr, protoPython::argsView(proto::ProtoListArguments(context, args2)), nullptr);
 
     const proto::ProtoObject* other = context->newObject(true)->addParent(context, env.getDictPrototype());
-    other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
+    other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__keys__"), context->newList()->asObject(context));
     const proto::ProtoObject* otherSetitem = other->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
     const proto::ProtoList* otherArgs1 = context->newList()->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromUTF8String("B"));
     otherSetitem->asMethod(context)(context, other, nullptr, protoPython::argsView(proto::ProtoListArguments(context, otherArgs1)), nullptr);
@@ -2395,7 +2395,7 @@ TEST_F(FoundationTest, ReproCrash) {
     proto::ProtoContext* context = env.getContext();
     // Create dictionary
     const proto::ProtoObject* dict = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "\001__data__"), context->newSparseList()->asObject(context));
     
     // Add item
     const proto::ProtoObject* setitem = dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));

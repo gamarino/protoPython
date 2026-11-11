@@ -211,7 +211,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         keys = keys->appendLast(ctx,
             PythonEnvironment::getInternedString(ctx, names[i])->asObject(ctx));
     }
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__keys__"), keys->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__keys__"), keys->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), keys->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"),
         PythonEnvironment::getInternedString(ctx, "fcntl")->asObject(ctx));

@@ -279,6 +279,22 @@ For every native function you write or modify, answer these questions:
   trivial comparison allocate (a `str` comparison that builds a temporary,
   for instance) or poll a safepoint breaks the assumption, and such a site
   must then pin before it compares.
+- bytearray storage (1.2.2): a bytearray's content is a persistent list of
+  byte chunks published by compare-and-swap (`src/library/BytearrayType.cpp`).
+  A writer (`mutate()`) reads the current version, derives the next one,
+  which allocates, and publishes it only if the version it read is still
+  current. The version it read is not pinned, which is the discipline lists
+  follow in `publishListData`: if another thread publishes a newer version
+  and a collection runs during the derivation, the version read is
+  unreachable and can be reclaimed while it is still being read, and a
+  reallocated cell at the same address could in principle let the CAS
+  succeed against stale content (ABA). No failure has been reproduced
+  (concurrent append/pop, rewrite/read, lane writes, memoryview lanes and
+  iteration during `extend`, at the default threshold and at
+  `PROTOCORE_GC_CONTEXT_THRESHOLD=100`). Readers that must see one version
+  (`bytes(ba)`, `bytesLikeContent`, a memoryview read) take one snapshot of
+  the list and read only it. The same assumption covers lists; removing it
+  for both means pinning the version read before deriving from it.
 
 When you add a native function that iterates or calls back into Python, follow
 the same pattern. The audit in [docs/audits/03-gc-roots.md](audits/03-gc-roots.md)

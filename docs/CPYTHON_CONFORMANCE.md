@@ -143,10 +143,19 @@ defect and adds a `test/regression/*.py` test registered in
   `__class__`. (Since 1.2.2 built-in types are immutable and instances of
   built-in types without `__dict__` accept no new attribute, as in CPython:
   `list.x = 1` raises `TypeError`, `[].x = 1` `AttributeError`.)
-- **`ba += ba` (1.2.2):** extending a bytearray with itself doubles it, as
-  CPython 3.13 does; CPython 3.14.0 raises `BufferError` (the bytearray
-  exports a buffer to itself while it resizes). protoPython keeps the
-  working behaviour.
+- **memoryview exports (1.2.2):** a bytearray counts as exports only the
+  memoryviews held by a `with` block (or by `__buffer__` until
+  `__release_buffer__`); resizing it while one is held raises CPython's
+  `BufferError: Existing exports of data: object cannot be re-sized`. Any
+  other view does not block a resize: CPython releases a view when its last
+  reference goes, and protoPython has no reference counting to tell when that
+  happens, so counting every view would raise for views nobody holds any
+  more (`bytes(memoryview(ba)[:n]); del ba[:n]`, the pattern asyncio's
+  streams use). Such a view instead raises `BufferError: memoryview: the
+  underlying bytearray was resized after the view was made` when it is used
+  after a resize; it never reads or writes shifted offsets. CPython raises at
+  the resize. `ba += ba` and `ba += memoryview(ba)` raise `BufferError` as
+  CPython 3.12 and 3.14 do (`extend(ba)` and `ba[0:0] = ba` work on both).
 - **Comparisons:** `object.__ne__` runs a full comparison, so
   `[].__ne__(())` is True where CPython returns NotImplemented.
 - **Error messages and reprs:** `sys.x` raises "'object' object has no

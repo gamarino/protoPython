@@ -183,7 +183,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         opname_obj = const_cast<proto::ProtoObject*>(opname_obj->addParent(ctx, env->getListPrototype()));
         opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getListPrototype()));
     }
-    opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"), opname_list->asObject(ctx)));
+    opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__data__"), opname_list->asObject(ctx)));
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "opname"), opname_obj);
 

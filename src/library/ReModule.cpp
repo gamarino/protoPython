@@ -1076,34 +1076,34 @@ ReState& state(proto::ProtoContext* ctx) {
     if (!slot) {
         auto s = std::make_shared<ReState>();
         auto sym = [&](const char* n) { return proto::ProtoString::createSymbol(ctx, n); };
-        s->compiled = sym("__re_compiled__");
+        s->compiled = sym("\001__re_compiled__");
         s->string = sym("string");
         s->re = sym("re");
         s->pos = sym("pos");
         s->endpos = sym("endpos");
         s->lastindex = sym("lastindex");
         s->lastgroup = sym("lastgroup");
-        s->spans = sym("__re_spans__");
-        s->matchProto = sym("__match_proto__");
-        s->patternProto = sym("__pattern_proto__");
-        s->error = sym("__re_error__");
-        s->cache = sym("__re_cache__");
+        s->spans = sym("\001__re_spans__");
+        s->matchProto = sym("\001__match_proto__");
+        s->patternProto = sym("\001__pattern_proto__");
+        s->error = sym("\001__re_error__");
+        s->cache = sym("\001__re_cache__");
         s->pattern = sym("pattern");
         s->flags = sym("flags");
         s->groups = sym("groups");
         s->groupindex = sym("groupindex");
-        s->scanPattern = sym("__scan_pattern__");
-        s->scanString = sym("__scan_string__");
-        s->scanPos = sym("__scan_pos__");
-        s->scanEnd = sym("__scan_end__");
-        s->scanAdvance = sym("__scan_advance__");
-        s->scanDone = sym("__scan_done__");
-        s->scanIterProto = sym("__scan_iter_proto__");
+        s->scanPattern = sym("\001__scan_pattern__");
+        s->scanString = sym("\001__scan_string__");
+        s->scanPos = sym("\001__scan_pos__");
+        s->scanEnd = sym("\001__scan_end__");
+        s->scanAdvance = sym("\001__scan_advance__");
+        s->scanDone = sym("\001__scan_done__");
+        s->scanIterProto = sym("\001__scan_iter_proto__");
         s->match = sym("match");
         s->lexicon = sym("lexicon");
         s->scanner = sym("scanner");
-        s->scanOuter = sym("__scan_outer__");
-        s->scanActions = sym("__scan_actions__");
+        s->scanOuter = sym("\001__scan_outer__");
+        s->scanActions = sym("\001__scan_actions__");
         slot = s;
     }
     return *static_cast<ReState*>(slot.get());
@@ -1327,7 +1327,7 @@ std::shared_ptr<const Subject> subjectFor(proto::ProtoContext* ctx, const proto:
     if (!fresh->isBytes && fresh->data.size() >= kCachedSubjectMinBytes && rs.module) {
         if (!cache.slot || cache.env != env) {
             static std::atomic<unsigned long long> nextSlot{0};
-            const std::string name = "__re_subject_" + std::to_string(nextSlot.fetch_add(1)) + "__";
+            const std::string name = "\001__re_subject_" + std::to_string(nextSlot.fetch_add(1)) + "__";
             cache.slot = proto::ProtoString::createSymbol(ctx, name.c_str());
         }
         const_cast<proto::ProtoObject*>(rs.module)->setAttribute(ctx, cache.slot, obj);
@@ -1626,6 +1626,10 @@ const proto::ProtoObject* obtainPattern(proto::ProtoContext* ctx, const proto::P
                 return hit;
         }
         text->toUTF8String(ctx, src);
+    } else if (PythonEnvironment::isBytearray(ctx, patArg)) {
+        // CPython's re looks the pattern up in a dict keyed by
+        // (type, pattern, flags): a bytearray is unhashable.
+        raiseTypeError(ctx, "cannot use 'tuple' as a dict key (unhashable type: 'bytearray')");
     } else if (bytesOf(ctx, patArg, src)) {
         isBytes = true;
         key = cacheKey(true, flags, src);
@@ -2618,7 +2622,7 @@ RE_METHOD(py_scanner_scan) {
             results = results->appendLast(ctx, action);
             PythonEnvironment::TransientPin pinR(&env, results->asObject(ctx));
             // Keep the newest list pinned for the next callback.
-            const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__scan_results__"),
+            const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "\001__scan_results__"),
                                                                  results->asObject(ctx));
         }
         i = j;
@@ -2641,7 +2645,7 @@ const proto::ProtoObject* makeReClass(proto::ProtoContext* ctx, const proto::Pro
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__qualname__"), nameObj);
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__module__"),
                             PythonEnvironment::getInternedString(ctx, "re")->asObject(ctx));
-    cls = cls->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__is_python_class__"), PROTO_TRUE);
+    cls = cls->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "\001__is_python_class__"), PROTO_TRUE);
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__bases__"),
                             PythonEnvironment::tupleFromList(ctx, ctx->newList()->appendLast(ctx, objectProto)));
     cls = cls->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mro__"),

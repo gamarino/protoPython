@@ -49,7 +49,7 @@ static void file_buffer_finalizer(void* ptr) {
 }
 
 static BufferFile* io_buffer_file(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
-    const proto::ProtoObject* bufObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__file_buffer__"));
+    const proto::ProtoObject* bufObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__file_buffer__"));
     if (!bufObj || bufObj == PROTO_NONE) return nullptr;
     const proto::ProtoExternalPointer* ext = bufObj->asExternalPointer(ctx);
     return ext ? static_cast<BufferFile*>(ext->getPointer(ctx)) : nullptr;
@@ -79,7 +79,7 @@ static const proto::ProtoObject* bio_make_bytes(proto::ProtoContext* ctx,
 static int io_get_fd(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
     if (!self) return -1;
     const proto::ProtoObject* fdObj = self->getAttribute(ctx,
-        proto::ProtoString::createSymbol(ctx, "__file_fd__"));
+        proto::ProtoString::createSymbol(ctx, "\001__file_fd__"));
     if (!fdObj || fdObj == PROTO_NONE) return -1;
     if (!fdObj->isInteger(ctx)) return -1;
     return static_cast<int>(fdObj->asLong(ctx));
@@ -100,7 +100,7 @@ static bool io_extract_bytes(proto::ProtoContext* ctx,
     if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* dataKey = env ? env->getDataString()
-        : PythonEnvironment::getInternedString(ctx, "__data__");
+        : PythonEnvironment::getInternedString(ctx, "\001__data__");
     const proto::ProtoObject* d = obj->getAttribute(ctx, dataKey);
     if (!d) return false;
     if (d->isByteBuffer(ctx)) {
@@ -206,7 +206,7 @@ static void fd_owner_finalizer(void* p) {
 }
 
 static FdOwner* io_fd_owner(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
-    const proto::ProtoObject* o = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__fd_owner__"));
+    const proto::ProtoObject* o = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__fd_owner__"));
     if (!o || o == PROTO_NONE) return nullptr;
     const proto::ProtoExternalPointer* ext = o->asExternalPointer(ctx);
     return ext ? static_cast<FdOwner*>(ext->getPointer(ctx)) : nullptr;
@@ -538,7 +538,7 @@ static bool io_write_all(proto::ProtoContext* ctx, int fd, const std::string& da
 // binary mode. Returns the number of characters or bytes written.
 static const proto::ProtoObject* io_fd_write(proto::ProtoContext* ctx, const proto::ProtoObject* self,
                                              FdOwner* owner, const proto::ProtoObject* data) {
-    const bool text = io_flag(ctx, self, "__text__");
+    const bool text = io_flag(ctx, self, "\001__text__");
     std::string s;
     if (text) {
         if (!data->isString(ctx)) {
@@ -548,7 +548,7 @@ static const proto::ProtoObject* io_fd_write(proto::ProtoContext* ctx, const pro
             return nullptr;
         }
         data->asString(ctx)->toUTF8String(ctx, s);
-        const proto::ProtoObject* nl = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__write_nl__"));
+        const proto::ProtoObject* nl = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__write_nl__"));
         if (nl && nl != PROTO_NONE && nl->isString(ctx) && s.find('\n') != std::string::npos) {
             std::string newline;
             nl->asString(ctx)->toUTF8String(ctx, newline);
@@ -590,8 +590,8 @@ static const proto::ProtoObject* py_io_read(
     if (fd >= 0) {
         FdOwner* owner = io_fd_owner(context, self);
         if (owner) {
-            const bool text = io_flag(context, self, "__text__");
-            const bool universal = io_flag(context, self, "__universal__");
+            const bool text = io_flag(context, self, "\001__text__");
+            const bool universal = io_flag(context, self, "\001__universal__");
             std::string out;
             {
                 FdOwnerLock guard(context, owner);
@@ -646,7 +646,7 @@ static const proto::ProtoObject* py_io_close(
         if (closefd) ::close(fd);
 #endif
         const_cast<proto::ProtoObject*>(self)->setAttribute(context,
-            proto::ProtoString::createSymbol(context, "__file_fd__"),
+            proto::ProtoString::createSymbol(context, "\001__file_fd__"),
             context->fromInteger(-1));
         const_cast<proto::ProtoObject*>(self)->setAttribute(context,
             proto::ProtoString::createSymbol(context, "closed"),
@@ -702,9 +702,9 @@ static std::string io_consume_line(const proto::ProtoObject* self,
 static const proto::ProtoObject* io_fd_next_line(proto::ProtoContext* context, const proto::ProtoObject* self,
                                                  FdOwner* owner, bool& atEnd, long long limit = -1) {
     std::string line;
-    const bool text = io_flag(context, self, "__text__");
+    const bool text = io_flag(context, self, "\001__text__");
     if (limit == 0) return io_fd_result(context, text, line);
-    const bool universal = io_flag(context, self, "__universal__");
+    const bool universal = io_flag(context, self, "\001__universal__");
     {
         FdOwnerLock guard(context, owner);
         if (!io_fd_readline(context, owner, universal, line)) return nullptr;
@@ -1167,15 +1167,15 @@ static const proto::ProtoObject* io_make_fd_file(proto::ProtoContext* context,
                                                  const proto::ProtoObject* newline,
                                                  FdOwner* sharedOwner = nullptr) {
     const proto::ProtoObject* proto = ioModule ? ioModule->getAttribute(context,
-        proto::ProtoString::createSymbol(context, "__fd_file_prototype__")) : nullptr;
+        proto::ProtoString::createSymbol(context, "\001__fd_file_prototype__")) : nullptr;
     const proto::ProtoObject* fileObj = (proto && proto != PROTO_NONE)
         ? proto->newChild(context, true)
         : context->newObject(true);
     auto set = [&](const char* name, const proto::ProtoObject* value) {
         fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, name), value);
     };
-    set("__file_fd__", context->fromInteger(fd));
-    set("__fd_owner__", sharedOwner ? context->fromExternalPointer(sharedOwner)
+    set("\001__file_fd__", context->fromInteger(fd));
+    set("\001__fd_owner__", sharedOwner ? context->fromExternalPointer(sharedOwner)
                                     : context->fromExternalPointer(new FdOwner{fd, closefd}, fd_owner_finalizer));
     set("mode", PythonEnvironment::getInternedString(context, mode.c_str())->asObject(context));
     set("name", nameObj);
@@ -1185,9 +1185,9 @@ static const proto::ProtoObject* io_make_fd_file(proto::ProtoContext* context,
     std::string nl;
     const bool nlNone = !newline || newline == PROTO_NONE || !newline->isString(context);
     if (!nlNone) newline->asString(context)->toUTF8String(context, nl);
-    set("__text__", text ? PROTO_TRUE : PROTO_FALSE);
+    set("\001__text__", text ? PROTO_TRUE : PROTO_FALSE);
     // Reading: universal newlines when newline is None.
-    set("__universal__", (text && nlNone) ? PROTO_TRUE : PROTO_FALSE);
+    set("\001__universal__", (text && nlNone) ? PROTO_TRUE : PROTO_FALSE);
     // Writing: "\n" becomes os.linesep when newline is None, or the newline
     // given when it is "\r" or "\r\n"; "" and "\n" write "\n" as is.
 #if defined(_WIN32)
@@ -1200,7 +1200,7 @@ static const proto::ProtoObject* io_make_fd_file(proto::ProtoContext* context,
         if (nlNone) writeNl = linesep;
         else if (nl == "\r" || nl == "\r\n") writeNl = nl == "\r" ? "\r" : "\r\n";
     }
-    if (writeNl) set("__write_nl__", PythonEnvironment::getInternedString(context, writeNl)->asObject(context));
+    if (writeNl) set("\001__write_nl__", PythonEnvironment::getInternedString(context, writeNl)->asObject(context));
     return fileObj;
 }
 
@@ -1270,6 +1270,14 @@ static const proto::ProtoObject* py_io_open(
     // A str or an os.PathLike (such as pathlib.Path), as CPython accepts.
     std::string filename;
     if (!PythonEnvironment::fsPathArgument(context, fileArg, filename)) {
+        // CPython: TypeError for anything that is not a path or a descriptor.
+        if (fileArg && !fileArg->isInteger(context)) {
+            if (PythonEnvironment* env = PythonEnvironment::fromContext(context)) {
+                env->raiseTypeError(context, "expected str, bytes or os.PathLike object, not "
+                    + PythonEnvironment::typeNameOf(context, fileArg));
+                return nullptr;
+            }
+        }
         return PROTO_NONE;
     }
 
@@ -1330,7 +1338,7 @@ static const proto::ProtoObject* py_io_open(
     // A read-mode file (see "Read-mode files"): a mutable child of the file
     // prototype, whose methods serve both kinds; close() records `closed`.
     const proto::ProtoObject* fileProto = self ? self->getAttribute(context,
-        proto::ProtoString::createSymbol(context, "__fd_file_prototype__")) : nullptr;
+        proto::ProtoString::createSymbol(context, "\001__fd_file_prototype__")) : nullptr;
     const proto::ProtoObject* fileObj = (fileProto && fileProto != PROTO_NONE)
         ? fileProto->newChild(context, true)
         : context->newObject(true);
@@ -1371,7 +1379,7 @@ static const proto::ProtoObject* py_io_open(
             }
         }
     }
-    set("__file_buffer__", context->fromExternalPointer(bufferFile, file_buffer_finalizer));
+    set("\001__file_buffer__", context->fromExternalPointer(bufferFile, file_buffer_finalizer));
     return fileObj;
 }
 
@@ -1410,7 +1418,7 @@ static const proto::ProtoObject* py_io_register(
 // which accepts:
 //   - `bytes` wrappers (whose `__data__` is ProtoString or ByteBuffer);
 //   - raw ByteBuffer cells;
-//   - `memoryview` (recurses into __mv_data__);
+//   - `memoryview` (through bytesLikeContent);
 //   - ProtoString (interpreted as raw octets);
 //   - bytearray (stored as a wrapper with mutable __data__).
 //
@@ -1420,10 +1428,10 @@ static const proto::ProtoObject* py_io_register(
 // already documents.
 
 static const proto::ProtoString* k_bio_buf(proto::ProtoContext* c) {
-    return proto::ProtoString::createSymbol(c, "__bio_buffer__");
+    return proto::ProtoString::createSymbol(c, "\001__bio_buffer__");
 }
 static const proto::ProtoString* k_bio_pos(proto::ProtoContext* c) {
-    return proto::ProtoString::createSymbol(c, "__bio_pos__");
+    return proto::ProtoString::createSymbol(c, "\001__bio_pos__");
 }
 
 // Build a `bytes` instance whose __data__ is a ProtoByteBuffer holding
@@ -1442,7 +1450,7 @@ static const proto::ProtoObject* bio_make_bytes(proto::ProtoContext* ctx,
     const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
         data.data(), static_cast<proto::proto_ulong>(data.size()));
     obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
-        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"),
+        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "\001__data__"),
         bb->asObject(ctx)));
     return obj;
 }
@@ -1471,10 +1479,6 @@ static std::string bio_obj_to_bytes(proto::ProtoContext* ctx, const proto::Proto
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
-        // memoryview wrapper.
-        const proto::ProtoObject* mv = obj->getAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "__mv_data__"));
-        if (mv && mv != PROTO_NONE && mv != obj) return bio_obj_to_bytes(ctx, mv);
         // bytes / bytearray wrapper: __data__ is ProtoString or ByteBuffer.
         const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
         if (data && data != PROTO_NONE && data != obj) {
@@ -1759,10 +1763,10 @@ static const proto::ProtoObject* py_bio_new(
 // ----- StringIO -------------------------------------------------------------
 
 static const proto::ProtoString* k_sio_buf(proto::ProtoContext* c) {
-    return proto::ProtoString::createSymbol(c, "__sio_buffer__");
+    return proto::ProtoString::createSymbol(c, "\001__sio_buffer__");
 }
 static const proto::ProtoString* k_sio_pos(proto::ProtoContext* c) {
-    return proto::ProtoString::createSymbol(c, "__sio_pos__");
+    return proto::ProtoString::createSymbol(c, "\001__sio_pos__");
 }
 
 // StringIO keeps its text as a str and its position as a character index,
@@ -1879,7 +1883,7 @@ static const proto::ProtoObject* py_sio_write(
     if (data && data->isString(ctx)) data->asString(ctx)->toUTF8String(ctx, text);
     else if (data) {
         const proto::ProtoObject* d = data->getAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "__data__"));
+            PythonEnvironment::getInternedString(ctx, "\001__data__"));
         if (d && d->isString(ctx)) d->asString(ctx)->toUTF8String(ctx, text);
     }
     const std::u32string chars = sio_decode(text);
@@ -2107,7 +2111,7 @@ static const proto::ProtoObject* py_sio_new(
                 a->asString(ctx)->toUTF8String(ctx, initial);
             } else {
                 const proto::ProtoObject* d = a->getAttribute(ctx,
-                    PythonEnvironment::getInternedString(ctx, "__data__"));
+                    PythonEnvironment::getInternedString(ctx, "\001__data__"));
                 if (d && d->isString(ctx)) d->asString(ctx)->toUTF8String(ctx, initial);
             }
         }
@@ -2279,7 +2283,7 @@ static const proto::ProtoObject* io_make_type(proto::ProtoContext* ctx,
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* ioMod = ctx->newObject(false);
     
-    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__fd_file_prototype__"),
+    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__fd_file_prototype__"),
         io_make_fd_file_prototype(ctx));
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open_code"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open_code));

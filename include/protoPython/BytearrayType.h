@@ -3,6 +3,10 @@
 
 #include <protoCore.h>
 
+#include <string>
+#include <utility>
+#include <vector>
+
 namespace protoPython {
 
 /**
@@ -13,6 +17,23 @@ namespace protoPython {
 const proto::ProtoObject* makeBytearrayType(proto::ProtoContext* ctx, const proto::ProtoObject* objectProto,
                                             const proto::ProtoObject* typeProto,
                                             const proto::ProtoObject* bytesProto);
+
+/**
+ * Buffer exports of a bytearray, for memoryview (MemoryviewType.cpp). A
+ * view is made at an epoch (bytearrayWatch); a resize advances the epoch,
+ * after which reads and writes through an older view raise BufferError. A
+ * held export (bytearrayHold, +1 on `with`, -1 on release) makes a resize
+ * raise BufferError, as CPython's exports do. Each call publishes or reads
+ * one version of the content: the export word and the bytes travel together.
+ * All return false when `ba` is not a bytearray (or after raising).
+ */
+bool bytearrayWatch(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long& epoch);
+bool bytearrayHold(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch, int delta);
+bool bytearrayViewRead(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch, std::string& out);
+bool bytearrayViewWrite(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch,
+                        const std::vector<std::pair<size_t, std::string>>& pieces);
+/** Raises BufferError with `msg` (never returns). */
+[[noreturn]] void raiseBufferError(proto::ProtoContext* ctx, const std::string& msg);
 
 } // namespace protoPython
 

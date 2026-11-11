@@ -35,7 +35,7 @@ class ABCMeta(type):
                 if v is None or getattr(v, "__isabstractmethod__", False):
                     abstracts.add(n)
         # Direct abstracts declared in this class body.
-        keys = getattr(ns, "__keys__", None) or list(ns)
+        keys = list(ns)
         for n in keys:
             v = _ns_lookup(ns, n)
             if v is None:

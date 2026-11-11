@@ -213,13 +213,13 @@ const proto::ProtoObject* hpy_method_wrapper(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* /*keywordParameters*/) {
-    const proto::ProtoObject* methObj = self ? self->getAttribute(context, internedKey(context, "__hpy_meth__")) : nullptr;
+    const proto::ProtoObject* methObj = self ? self->getAttribute(context, internedKey(context, "\001__hpy_meth__")) : nullptr;
     const proto::ProtoExternalPointer* ext =
         (methObj && methObj != PROTO_NONE) ? methObj->asExternalPointer(context) : nullptr;
     if (!ext || !ext->getPointer(context)) return PROTO_NONE;
     const HPyCFunction meth = reinterpret_cast<HPyCFunction>(ext->getPointer(context));
 
-    const proto::ProtoObject* hpySelf = self->getAttribute(context, internedKey(context, "__hpy_self__"));
+    const proto::ProtoObject* hpySelf = self->getAttribute(context, internedKey(context, "\001__hpy_self__"));
     if (!hpySelf) hpySelf = PROTO_NONE;
 
     // Handles opened for this call stay pinned until hctx is destroyed on return;
@@ -248,9 +248,9 @@ const proto::ProtoObject* makeHPyFunction(HPyContext* hctx, const char* name, HP
     const proto::ProtoObject* wrap = ctx->newObject(true);
     const HPy hWrap = hctx->fromProtoObject(wrap);
     wrap = wrap->setAttribute(ctx, internedKey(ctx, "__name__"), internedKey(ctx, name)->asObject(ctx));
-    wrap = wrap->setAttribute(ctx, internedKey(ctx, "__hpy_meth__"),
+    wrap = wrap->setAttribute(ctx, internedKey(ctx, "\001__hpy_meth__"),
                               ctx->fromExternalPointer(reinterpret_cast<void*>(meth)));
-    wrap = wrap->setAttribute(ctx, internedKey(ctx, "__hpy_self__"), hpySelf ? hpySelf : PROTO_NONE);
+    wrap = wrap->setAttribute(ctx, internedKey(ctx, "\001__hpy_self__"), hpySelf ? hpySelf : PROTO_NONE);
     const proto::ProtoObject* callable = ctx->fromMethod(const_cast<proto::ProtoObject*>(wrap), hpy_method_wrapper);
     hctx->close(hWrap);
     return callable;

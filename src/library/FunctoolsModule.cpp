@@ -11,8 +11,8 @@ static const proto::ProtoObject* py_partial_call(
     const proto::ParentLink*,
     const proto::ProtoArguments* posArgs,
     const proto::ProtoKeywordArguments*) {
-    const proto::ProtoObject* func = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_func__"));
-    const proto::ProtoObject* frozenObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_args__"));
+    const proto::ProtoObject* func = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__partial_func__"));
+    const proto::ProtoObject* frozenObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__partial_args__"));
     if (!func) return PROTO_NONE;
 
     const proto::ProtoList* args = ctx->newList();
@@ -41,11 +41,11 @@ static const proto::ProtoObject* py_partial(
     for (proto::proto_ulong i = 1; i < posArgs->getSize(ctx); ++i)
         frozen = frozen->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
 
-    const proto::ProtoObject* partialProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_proto__"));
+    const proto::ProtoObject* partialProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__partial_proto__"));
     if (!partialProto) return PROTO_NONE;
     const proto::ProtoObject* p = partialProto->newChild(ctx, true);
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_func__"), func);
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_args__"), frozen->asObject(ctx));
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__partial_func__"), func);
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__partial_args__"), frozen->asObject(ctx));
     return p;
 }
 
@@ -168,7 +168,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     partialProto = partialProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(partialProto), py_partial_call));
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_proto__"), partialProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__partial_proto__"), partialProto);
     // STRUCT-293: do NOT export `partial`, `Placeholder`, or
     // `_PlaceholderType` from _functools.  The native `py_partial`
     // shim above returns a plain `<object>` cell (not a class

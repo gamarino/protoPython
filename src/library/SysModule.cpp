@@ -71,7 +71,7 @@ static const proto::ProtoObject* sys_exit(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
         // sys.exit(arg) raises SystemExit(arg) whatever the argument's type;
@@ -146,7 +146,7 @@ static const proto::ProtoObject* sys_settrace(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr) {
         const proto::ProtoExternalPointer* ext = envPtr->asExternalPointer(context);
         if (ext) {
@@ -255,7 +255,7 @@ static const proto::ProtoObject* sys_gettrace(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr) {
         const proto::ProtoExternalPointer* ext = envPtr->asExternalPointer(context);
         if (ext) {
@@ -453,7 +453,7 @@ static const proto::ProtoObject* sys_setrecursionlimit(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
         if (positionalParameters->getSize(context) > 0) {
@@ -1000,7 +1000,7 @@ static const proto::ProtoObject* sys_getrecursionlimit(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
         if (env) return context->fromInteger(env->getRecursionLimit());
@@ -1013,7 +1013,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const proto::ProtoObject* sys = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
 
     // Store env pointer for trace functions and exit
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__env_ptr__"), ctx->fromExternalPointer(env));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__env_ptr__"), ctx->fromExternalPointer(env));
 
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "exception"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exception));
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "exc_info"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exc_info));
@@ -1180,7 +1180,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         argvWrapper = argvWrapper->addParent(ctx, env->getListPrototype());
         argvWrapper = argvWrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), env->getListPrototype());
     }
-    argvWrapper = argvWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"), argvList->asObject(ctx));
+    argvWrapper = argvWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "\001__data__"), argvList->asObject(ctx));
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "argv"), argvWrapper);
 
     // sys.warnoptions (empty list by default)
@@ -1190,7 +1190,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         warnWrapper = warnWrapper->addParent(ctx, env->getListPrototype());
         warnWrapper = warnWrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), env->getListPrototype());
     }
-    warnWrapper = warnWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"), warnList->asObject(ctx));
+    warnWrapper = warnWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "\001__data__"), warnList->asObject(ctx));
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "warnoptions"), warnWrapper);
 
     // sys.version_info: struct sequence (major, minor, micro, releaselevel, serial)

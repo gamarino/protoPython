@@ -10,6 +10,10 @@
 // conflict, the discipline a list follows (publishListData). No lock is
 // taken, and no update is lost when threads mutate one bytearray at once.
 //
+// Element 0 of the list is the export word, not a chunk (see "buffer
+// exports" below): chunk c is at list index c + 1. It travels in the list so
+// that a resize and an export are published by the same compare-and-swap.
+//
 // Appending copies at most one chunk and replaces one list path: O(kChunk +
 // log n) per append, so building a bytearray of n bytes is linear in n
 // (it was quadratic when each append copied the whole buffer). Operations
@@ -20,6 +24,7 @@
 // the content and a bytes result becomes a bytearray (ba.upper(), ba[1:]).
 
 #include <protoPython/BytearrayType.h>
+#include <protoPython/MemoryviewType.h>
 #include <protoPython/BuiltinSignature.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
@@ -29,6 +34,7 @@
 #include <array>
 #include <atomic>
 #include <cstring>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -42,20 +48,61 @@ using PL = proto::ProtoList;
 
 constexpr size_t kChunk = 512;
 
+// The content's key: internal (U+0001-prefixed), so Python code can neither
+// read nor replace it (PythonEnvironment::pythonAttributeKey), interned once.
 const proto::ProtoString* storageName(proto::ProtoContext* ctx) {
-    return PythonEnvironment::getInternalString(ctx, "__bytearray__");
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return env ? env->getBytearrayKey() : PythonEnvironment::getInternalString(ctx, "\001__bytearray__");
 }
 
 bool isCellObject(const PO* o) { return o && (reinterpret_cast<uintptr_t>(o) & 0x3F) == 0; }
 
 // --- the chunked store ------------------------------------------------------
 
+// A slot that is not a byte buffer is corruption, not data: SystemError,
+// never a dereference.
+[[noreturn]] void corruptStore(proto::ProtoContext* ctx) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseSystemError(ctx, "bytearray storage is corrupt");
+    throw std::runtime_error("bytearray storage is corrupt");
+}
+
+// --- buffer exports ----------------------------------------------------------
+//
+// The export word: the number of exports held now (a memoryview inside a
+// `with` block or not yet released after one), a "watched" bit set once any
+// memoryview has viewed the bytearray, and an epoch counting the resizes made
+// while watched. A resize with exports held raises BufferError, as CPython's
+// does; a view not held (protoCore has no reference counts to tell a live
+// view from a dead one) remembers the epoch it was made at and raises
+// BufferError when used after a resize, instead of reading shifted bytes.
+constexpr long long kExportMask = (1LL << 20) - 1;
+constexpr long long kWatched = 1LL << 20;
+constexpr int kEpochShift = 21;
+
+const PO* initialHead(proto::ProtoContext* ctx) { return ctx->fromInteger(0); }
+
+long long headWord(proto::ProtoContext* ctx, const PL* l) {
+    const PO* h = l->getSize(ctx) > 0 ? l->getAt(ctx, 0) : nullptr;
+    if (!h || !h->isInteger(ctx)) corruptStore(ctx);
+    return h->asLong(ctx);
+}
+
+size_t chunkCount(proto::ProtoContext* ctx, const PL* l) {
+    const size_t k = l->getSize(ctx);
+    if (k == 0) corruptStore(ctx);
+    return k - 1;
+}
+
 const proto::ProtoByteBuffer* chunkAt(proto::ProtoContext* ctx, const PL* l, size_t i) {
-    return l->getAt(ctx, static_cast<int>(i))->asByteBuffer(ctx);
+    const PO* slot = l->getAt(ctx, static_cast<int>(i + 1));
+    const proto::ProtoByteBuffer* bb = slot ? slot->asByteBuffer(ctx) : nullptr;
+    if (!bb) corruptStore(ctx);
+    return bb;
 }
 
 size_t storeSize(proto::ProtoContext* ctx, const PL* l) {
-    const size_t k = l->getSize(ctx);
+    const size_t k = chunkCount(ctx, l);
     return k == 0 ? 0 : (k - 1) * kChunk + chunkAt(ctx, l, k - 1)->getSize(ctx);
 }
 
@@ -76,7 +123,7 @@ void storeRead(proto::ProtoContext* ctx, const PL* l, std::string& out, size_t f
 }
 
 const PL* storeAppend(proto::ProtoContext* ctx, const PL* l, const char* d, size_t n) {
-    const size_t k = l->getSize(ctx);
+    const size_t k = chunkCount(ctx, l);
     if (n == 0) return l;
     if (k > 0) {
         const proto::ProtoByteBuffer* last = chunkAt(ctx, l, k - 1);
@@ -85,7 +132,7 @@ const PL* storeAppend(proto::ProtoContext* ctx, const PL* l, const char* d, size
             const size_t take = std::min(n, kChunk - have);
             std::string merged(last->getBuffer(ctx), have);
             merged.append(d, take);
-            l = l->setAt(ctx, static_cast<int>(k - 1),
+            l = l->setAt(ctx, static_cast<int>(k),
                          ctx->newByteBuffer(merged.data(), merged.size())->asObject(ctx));
             d += take;
             n -= take;
@@ -100,8 +147,9 @@ const PL* storeAppend(proto::ProtoContext* ctx, const PL* l, const char* d, size
     return l;
 }
 
-const PL* storeFrom(proto::ProtoContext* ctx, const char* d, size_t n) {
-    return storeAppend(ctx, ctx->newList(), d, n);
+// A store holding [d, d + n), with export word `head`.
+const PL* storeFrom(proto::ProtoContext* ctx, const PO* head, const char* d, size_t n) {
+    return storeAppend(ctx, ctx->newList()->appendLast(ctx, head), d, n);
 }
 
 unsigned char storeAt(proto::ProtoContext* ctx, const PL* l, size_t i) {
@@ -112,7 +160,7 @@ const PL* storeSetByte(proto::ProtoContext* ctx, const PL* l, size_t i, unsigned
     const proto::ProtoByteBuffer* c = chunkAt(ctx, l, i / kChunk);
     std::string copy(c->getBuffer(ctx), c->getSize(ctx));
     copy[i % kChunk] = static_cast<char>(b);
-    return l->setAt(ctx, static_cast<int>(i / kChunk), ctx->newByteBuffer(copy.data(), copy.size())->asObject(ctx));
+    return l->setAt(ctx, static_cast<int>(i / kChunk + 1), ctx->newByteBuffer(copy.data(), copy.size())->asObject(ctx));
 }
 
 // Overwrites [at, at + data.size()) without changing the size.
@@ -126,24 +174,30 @@ const PL* storeOverwrite(proto::ProtoContext* ctx, const PL* l, size_t at, const
         const size_t off = i % kChunk;
         const size_t take = std::min(data.size() - done, copy.size() - off);
         std::memcpy(&copy[off], data.data() + done, take);
-        l = l->setAt(ctx, static_cast<int>(c), ctx->newByteBuffer(copy.data(), copy.size())->asObject(ctx));
+        l = l->setAt(ctx, static_cast<int>(c + 1), ctx->newByteBuffer(copy.data(), copy.size())->asObject(ctx));
         done += take;
     }
     return l;
 }
 
 const PL* storePopLast(proto::ProtoContext* ctx, const PL* l) {
-    const size_t k = l->getSize(ctx);
+    const size_t k = chunkCount(ctx, l);
     const proto::ProtoByteBuffer* last = chunkAt(ctx, l, k - 1);
     const size_t have = last->getSize(ctx);
     if (have == 1) return l->removeLast(ctx);
-    return l->setAt(ctx, static_cast<int>(k - 1), ctx->newByteBuffer(last->getBuffer(ctx), have - 1)->asObject(ctx));
+    return l->setAt(ctx, static_cast<int>(k), ctx->newByteBuffer(last->getBuffer(ctx), have - 1)->asObject(ctx));
 }
 
 // --- instances ---------------------------------------------------------------
 
+// A bytearray is recognised by its type -- an instance of bytearray or of a
+// subclass -- and then by its content under the internal key.
+const PO* bytearrayType(proto::ProtoContext* ctx);
+
 const PL* stateOf(proto::ProtoContext* ctx, const PO* obj, const PO** raw = nullptr) {
     if (!isCellObject(obj)) return nullptr;
+    const PO* cls = bytearrayType(ctx);
+    if (!cls || obj == cls || obj->isInstanceOf(ctx, cls) != PROTO_TRUE) return nullptr;
     const PO* s = obj->getOwnAttributeDirect(ctx, storageName(ctx));
     if (raw) *raw = s;
     if (!s || s == PROTO_NONE) return nullptr;
@@ -157,13 +211,30 @@ const PO* bytearrayType(proto::ProtoContext* ctx) {
 
 const PO* makeInstance(proto::ProtoContext* ctx, const PO* cls, const char* d, size_t n) {
     const PO* b = cls->newChild(ctx, true);
-    b->setAttribute(ctx, storageName(ctx), storeFrom(ctx, d, n)->asObject(ctx));
+    b->setAttribute(ctx, storageName(ctx), storeFrom(ctx, initialHead(ctx), d, n)->asObject(ctx));
     return b;
 }
 
+} // namespace
+
+[[noreturn]] void raiseBufferError(proto::ProtoContext* ctx, const std::string& msg) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const PO* cls = env ? env->getBuiltins()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "BufferError"))
+                        : nullptr;
+    const PO* exc = (cls && cls != PROTO_NONE) ? env->callObject(cls, {PythonEnvironment::newStr(ctx, msg)}) : nullptr;
+    if (exc && env) env->raiseException(exc);
+    throw std::runtime_error(msg);
+}
+
+namespace {
+
 // Publishes `derive(current store)` with a compare-and-swap, retrying on a
 // conflict; derive returns nullptr after raising, which ends the mutation.
-// derive runs no Python code: arguments are read before the loop.
+// derive runs no Python code: arguments are read before the loop. The
+// export word is carried over from the current store: a change of size
+// raises BufferError while exports are held, and advances the epoch of a
+// watched bytearray -- checked against the store the swap replaces, so an
+// export and a resize can never both succeed.
 template <class Derive>
 bool mutate(proto::ProtoContext* ctx, const PO* ba, Derive derive) {
     const proto::ProtoString* name = storageName(ctx);
@@ -174,6 +245,15 @@ bool mutate(proto::ProtoContext* ctx, const PO* ba, Derive derive) {
         const PL* next = derive(cur);
         if (!next) return false;
         if (next == cur) return true;
+        long long word = headWord(ctx, cur);
+        if (storeSize(ctx, next) != storeSize(ctx, cur)) {
+            if (word & kExportMask) {
+                raiseBufferError(ctx, "Existing exports of data: object cannot be re-sized");
+                return false;
+            }
+            if (word & kWatched) word += 1LL << kEpochShift;
+        }
+        if (headWord(ctx, next) != word) next = next->setAt(ctx, 0, ctx->fromInteger(word));
         if (ba->setAttributeIfEqual(ctx, name, raw, next->asObject(ctx))) return true;
     }
 }
@@ -187,7 +267,7 @@ bool rewrite(proto::ProtoContext* ctx, const PO* ba, Derive derive) {
         storeRead(ctx, cur, in);
         std::string out;
         if (!derive(in, out)) return nullptr;
-        return storeFrom(ctx, out.data(), out.size());
+        return storeFrom(ctx, cur->getAt(ctx, 0), out.data(), out.size());
     });
 }
 
@@ -552,6 +632,12 @@ BA_METHOD(ba_iadd) {
         return nullptr;
     }
     const PO* other = arg(ctx, args, shift, 0);
+    // CPython holds the operand's buffer while it resizes: a bytearray
+    // extended by itself, or by a view of itself, has an export then.
+    if (other == ba || (isMemoryview(ctx, other) && memoryviewExporter(ctx, other) == ba)) {
+        raiseBufferError(ctx, "Existing exports of data: object cannot be re-sized");
+        return nullptr;
+    }
     std::string add;
     if (!PythonEnvironment::bytesLikeContent(ctx, other, add)) {
         raiseType(ctx, "can't concat " + typeName(ctx, other) + " to bytearray");
@@ -682,7 +768,7 @@ BA_METHOD(ba_pop) {
         std::string in;
         storeRead(ctx, cur, in);
         in.erase(static_cast<size_t>(at), 1);
-        return storeFrom(ctx, in.data(), in.size());
+        return storeFrom(ctx, cur->getAt(ctx, 0), in.data(), in.size());
     });
     return ok ? ctx->fromInteger(popped) : nullptr;
 }
@@ -710,7 +796,7 @@ BA_METHOD(ba_remove) {
 
 BA_METHOD(ba_clear) {
     BA_RECEIVER("clear")
-    return mutate(ctx, ba, [&](const PL*) { return ctx->newList(); }) ? none() : nullptr;
+    return mutate(ctx, ba, [&](const PL* cur) { return ctx->newList()->appendLast(ctx, cur->getAt(ctx, 0)); }) ? none() : nullptr;
 }
 
 BA_METHOD(ba_reverse) {
@@ -840,6 +926,10 @@ BA_METHOD(ba_buffer) {
 
 BA_METHOD(ba_release_buffer) {
     BA_RECEIVER("__release_buffer__")
+    if (argc(ctx, args, shift) == 1 && isMemoryview(ctx, arg(ctx, args, shift, 0))) {
+        PythonEnvironment* env = envOf(ctx);
+        if (env && !env->callMethod(arg(ctx, args, shift, 0), "release", {})) return nullptr;
+    }
     return none();
 }
 
@@ -861,7 +951,10 @@ BA_METHOD(ba_fromhex) {
         raiseType(ctx, "fromhex() takes exactly one argument (" + std::to_string(argc(ctx, args, first)) + " given)");
         return nullptr;
     }
-    const PO* fromhex = env->getBytesPrototype()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fromhex"));
+    // bytes' native fromhex (bytes.fromhex itself is a classmethod).
+    const PO* fromhex = env->getBytesPrototype()->getOwnAttributeDirect(ctx,
+        PythonEnvironment::getInternalString(ctx, "\001__native_fromhex__"));
+    if (!fromhex) fromhex = env->getBytesPrototype()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fromhex"));
     if (!fromhex || !fromhex->asMethod(ctx)) return PROTO_NONE;
     const PL* fargs = ctx->newList()->appendLast(ctx, env->getBytesPrototype())->appendLast(ctx, arg(ctx, args, first, 0));
     const PO* bytesResult = fromhex->asMethod(ctx)(ctx, env->getBytesPrototype(), nullptr,
@@ -879,11 +972,11 @@ BA_METHOD(ba_fromhex) {
 BA_METHOD(ba_iter) {
     BA_RECEIVER("__iter__")
     PythonEnvironment* env = envOf(ctx);
-    const PO* itCls = env ? env->getBytearrayPrototype()->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__bytearray_iterator__")) : nullptr;
+    const PO* itCls = env ? env->getBytearrayPrototype()->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__bytearray_iterator__")) : nullptr;
     if (!itCls || itCls == PROTO_NONE) return PROTO_NONE;
     const PO* it = itCls->newChild(ctx, true);
-    it->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__it_seq__"), ba);
-    it->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__it_index__"), ctx->fromInteger(0));
+    it->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__it_seq__"), ba);
+    it->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__it_index__"), ctx->fromInteger(0));
     return it;
 }
 
@@ -891,8 +984,8 @@ BA_METHOD(ba_iter) {
 // it sees appends made while iterating and stops at the current end.
 const PO* ba_iter_next(proto::ProtoContext* ctx, const PO* self, const proto::ParentLink*,
                        const proto::ProtoArguments*, const proto::ProtoKeywordArguments*) {
-    const proto::ProtoString* idxName = PythonEnvironment::getInternalString(ctx, "__it_index__");
-    const PO* seq = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__it_seq__"));
+    const proto::ProtoString* idxName = PythonEnvironment::getInternalString(ctx, "\001__it_index__");
+    const PO* seq = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__it_seq__"));
     const PL* st = stateOf(ctx, seq);
     if (!st) return nullptr;
     for (;;) {
@@ -1077,7 +1170,7 @@ const PO* ba_init_impl(proto::ProtoContext* ctx, const PO* self, const proto::Pa
     if (!ba) return nullptr;
     std::string content;
     if (!initialContent(ctx, args, shift, content)) return nullptr;
-    const bool ok = mutate(ctx, ba, [&](const PL*) { return storeFrom(ctx, content.data(), content.size()); });
+    const bool ok = mutate(ctx, ba, [&](const PL* cur) { return storeFrom(ctx, cur->getAt(ctx, 0), content.data(), content.size()); });
     return ok ? none() : nullptr;
 }
 
@@ -1113,22 +1206,10 @@ bool PythonEnvironment::bytesLikeContent(proto::ProtoContext* ctx, const proto::
     }
     if (!isCellObject(obj) || obj->isString(ctx)) return false;
     if (bytearrayContent(ctx, obj, out)) return true;
-    // A memoryview: its source's bytes, within the view's range.
-    const PO* mv = obj->getAttribute(ctx, getInternalString(ctx, "__mv_data__"));
-    if (mv && mv != PROTO_NONE && mv != obj) {
-        std::string all;
-        if (mv->isString(ctx)) mv->asString(ctx)->toUTF8String(ctx, all);
-        else if (!bytesLikeContent(ctx, mv, all)) return false;
-        const PO* a = obj->getAttribute(ctx, getInternalString(ctx, "__mv_start__"));
-        const PO* b = obj->getAttribute(ctx, getInternalString(ctx, "__mv_stop__"));
-        size_t from = a && a->isInteger(ctx) ? static_cast<size_t>(a->asLong(ctx)) : 0;
-        size_t to = b && b->isInteger(ctx) ? static_cast<size_t>(b->asLong(ctx)) : all.size();
-        to = std::min(to, all.size());
-        from = std::min(from, to);
-        out.assign(all, from, to - from);
-        return true;
-    }
-    const PO* d = obj->getAttribute(ctx, getInternalString(ctx, "__data__"));
+    // A memoryview: the bytes it views, read from one snapshot.
+    if (memoryviewContent(ctx, obj, out)) return true;
+    PythonEnvironment* menv = fromContext(ctx);
+    const PO* d = menv ? obj->getAttribute(ctx, menv->getDataString()) : nullptr;
     if (d && d != PROTO_NONE && d != obj) {
         if (d->isByteBuffer(ctx)) {
             const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
@@ -1159,24 +1240,8 @@ const proto::ProtoObject* PythonEnvironment::newBytearray(proto::ProtoContext* c
 
 bool PythonEnvironment::bytearrayWrite(proto::ProtoContext* ctx, const proto::ProtoObject* obj, size_t at,
                                        const std::string& data) {
-    // A memoryview writes into the bytearray it views, at its offset.
-    if (!stateOf(ctx, obj) && isCellObject(obj)) {
-        const PO* viewed = obj->getAttribute(ctx, getInternedString(ctx, "__mv_data__"));
-        if (viewed && viewed != obj && stateOf(ctx, viewed)) {
-            const PO* a = obj->getAttribute(ctx, getInternalString(ctx, "__mv_start__"));
-            const PO* b = obj->getAttribute(ctx, getInternalString(ctx, "__mv_stop__"));
-            const size_t from = a && a->isInteger(ctx) ? static_cast<size_t>(a->asLong(ctx)) : 0;
-            if (b && b->isInteger(ctx) && at + data.size() > static_cast<size_t>(b->asLong(ctx)) - from) {
-                raiseIndex(ctx, "write outside the memoryview");
-                return false;
-            }
-            return bytearrayWrite(ctx, viewed, from + at, data);
-        }
-        if (viewed && viewed != obj && viewed != PROTO_NONE) {
-            raiseType(ctx, "cannot modify read-only memory");
-            return false;
-        }
-    }
+    // A memoryview writes into the bytearray it views.
+    if (!stateOf(ctx, obj) && isMemoryview(ctx, obj)) return memoryviewWrite(ctx, obj, at, data);
     if (!stateOf(ctx, obj)) {
         raiseType(ctx, "a writable bytes-like object is required, not '" + typeName(ctx, obj) + "'");
         return false;
@@ -1187,6 +1252,78 @@ bool PythonEnvironment::bytearrayWrite(proto::ProtoContext* ctx, const proto::Pr
             return nullptr;
         }
         return data.empty() ? cur : storeOverwrite(ctx, cur, at, data);
+    });
+}
+
+// --- buffer exports (MemoryviewType.cpp) ------------------------------------
+
+namespace {
+
+// Publishes a new export word computed from the current one, keeping the
+// content; `change` returns false after raising.
+template <class Change>
+bool publishHead(proto::ProtoContext* ctx, const PO* ba, Change change, long long* epochOut = nullptr) {
+    if (!stateOf(ctx, ba)) return false;
+    const proto::ProtoString* name = storageName(ctx);
+    for (;;) {
+        const PO* raw = ba->getOwnAttributeDirect(ctx, name);
+        const PL* cur = raw ? raw->asList(ctx) : nullptr;
+        if (!cur) return false;
+        const long long word = headWord(ctx, cur);
+        long long next = word;
+        if (!change(word, next)) return false;
+        if (epochOut) *epochOut = next >> kEpochShift;
+        if (next == word) return true;
+        if (ba->setAttributeIfEqual(ctx, name, raw, cur->setAt(ctx, 0, ctx->fromInteger(next))->asObject(ctx))) return true;
+    }
+}
+
+[[noreturn]] void raiseStaleView(proto::ProtoContext* ctx) {
+    raiseBufferError(ctx, "memoryview: the underlying bytearray was resized after the view was made");
+}
+
+} // namespace
+
+bool bytearrayWatch(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long& epoch) {
+    return publishHead(ctx, ba, [](long long w, long long& n) { n = w | kWatched; return true; }, &epoch);
+}
+
+bool bytearrayHold(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch, int delta) {
+    return publishHead(ctx, ba, [&](long long w, long long& n) {
+        if (delta > 0 && (w >> kEpochShift) != epoch) raiseStaleView(ctx);
+        const long long count = (w & kExportMask) + delta;
+        if (count < 0 || count > kExportMask) {
+            raiseBufferError(ctx, "bytearray export count out of range");
+            return false;
+        }
+        n = (w & ~kExportMask) | count;
+        return true;
+    });
+}
+
+bool bytearrayViewRead(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch, std::string& out) {
+    const PL* st = stateOf(ctx, ba);
+    if (!st) return false;
+    if ((headWord(ctx, st) >> kEpochShift) != epoch) raiseStaleView(ctx);
+    out.clear();
+    storeRead(ctx, st, out);
+    return true;
+}
+
+bool bytearrayViewWrite(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch,
+                        const std::vector<std::pair<size_t, std::string>>& pieces) {
+    return mutate(ctx, ba, [&](const PL* cur) -> const PL* {
+        if ((headWord(ctx, cur) >> kEpochShift) != epoch) raiseStaleView(ctx);
+        const size_t n = storeSize(ctx, cur);
+        const PL* next = cur;
+        for (const auto& p : pieces) {
+            if (p.first + p.second.size() > n) {
+                raiseIndex(ctx, "write outside the bytearray");
+                return nullptr;
+            }
+            if (!p.second.empty()) next = storeOverwrite(ctx, next, p.first, p.second);
+        }
+        return next;
     });
 }
 
@@ -1201,8 +1338,8 @@ const proto::ProtoObject* makeBytearrayType(proto::ProtoContext* ctx, const prot
     // bytes' methods that bytearray does not define itself.
     static const char* const own[] = {
         "__new__", "__init__", "__hash__", "__repr__", "__str__", "__class__", "__name__", "__qualname__",
-        "__mro__", "__bases__", "__base__", "__module__", "__doc__", "__dict__", "__data__", "__getnewargs__",
-        "__bytes__", "__is_python_class__", "__len__", "__getitem__", "__setitem__", "__delitem__",
+        "__mro__", "__bases__", "__base__", "__module__", "__doc__", "__dict__", "\001__data__", "__getnewargs__",
+        "__bytes__", "\001__is_python_class__", "__len__", "__getitem__", "__setitem__", "__delitem__",
         "__iter__", "__add__", "__iadd__", "__imul__", "__reduce__", "__reduce_ex__", "fromhex",
         "maketrans", "__sizeof__", "__buffer__", "__release_buffer__"};
     struct Sink { const PO* cls; };
@@ -1294,7 +1431,7 @@ const proto::ProtoObject* makeBytearrayType(proto::ProtoContext* ctx, const prot
     if (objectProto)
         it = it->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"),
                               ctx->newTupleFromList(ctx->newList()->appendLast(ctx, it)->appendLast(ctx, objectProto))->asObject(ctx));
-    cls = cls->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__bytearray_iterator__"), it);
+    cls = cls->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__bytearray_iterator__"), it);
     if (env) env->setBytearrayPrototype(cls);
     return cls;
 }

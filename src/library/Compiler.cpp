@@ -686,7 +686,7 @@ bool Compiler::compileConstant(ConstantNode* n) {
                 n->bytesVal.data(),
                 static_cast<proto::proto_ulong>(n->bytesVal.size()));
             b->setAttribute(ctx_,
-                PythonEnvironment::getInternedString(ctx_, "__data__"),
+                PythonEnvironment::getInternedString(ctx_, "\001__data__"),
                 bb->asObject(ctx_));
             // Set __class__ so getType() returns bytesPrototype (not typePrototype via prototype-chain lookup).
             b->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "__class__"), env->getBytesPrototype());

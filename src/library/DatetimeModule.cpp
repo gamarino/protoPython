@@ -31,7 +31,7 @@ static void delta_finalizer(void* ptr) {
 }
 
 static DeltaState* get_delta_state(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
-    const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, "__delta_ptr__");
+    const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, "\001__delta_ptr__");
     const proto::ProtoObject* ptrObj = self->getAttribute(ctx, key);
     if (ptrObj) {
         const proto::ProtoExternalPointer* ext = ptrObj->asExternalPointer(ctx);
@@ -63,7 +63,7 @@ static const proto::ProtoObject* create_timedelta_instance(proto::ProtoContext* 
     const proto::ProtoObject* instance = cls->newChild(ctx, true);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), cls);
     DeltaState* state = new DeltaState{d, s, us};
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__delta_ptr__"),
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "\001__delta_ptr__"),
                                     ctx->fromExternalPointer(state, delta_finalizer));
     
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "days"), ctx->fromInteger(d));
@@ -180,7 +180,7 @@ static void date_finalizer(void* ptr) {
 }
 
 static DateState* get_date_state(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
-    const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, "__date_ptr__");
+    const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, "\001__date_ptr__");
     const proto::ProtoObject* ptrObj = self->getAttribute(ctx, key);
     if (ptrObj) {
         const proto::ProtoExternalPointer* ext = ptrObj->asExternalPointer(ctx);
@@ -309,7 +309,7 @@ static void time_finalizer(void* ptr) {
 }
 
 static TimeState* get_time_state(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
-    const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, "__time_ptr__");
+    const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, "\001__time_ptr__");
     const proto::ProtoObject* ptrObj = self->getAttribute(ctx, key);
     if (ptrObj) {
         const proto::ProtoExternalPointer* ext = ptrObj->asExternalPointer(ctx);
@@ -329,7 +329,7 @@ static const proto::ProtoObject* create_date_instance(proto::ProtoContext* ctx, 
     const proto::ProtoObject* instance = cls->newChild(ctx, true);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), cls);
     DateState* state = new DateState{y, m, d};
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__date_ptr__"),
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "\001__date_ptr__"),
                                     ctx->fromExternalPointer(state, date_finalizer));
     
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "year"), ctx->fromInteger(y));
@@ -347,7 +347,7 @@ static const proto::ProtoObject* create_time_instance(proto::ProtoContext* ctx, 
     const proto::ProtoObject* instance = cls->newChild(ctx, true);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), cls);
     TimeState* state = new TimeState{h, min, s, ms};
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__time_ptr__"),
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "\001__time_ptr__"),
                                     ctx->fromExternalPointer(state, time_finalizer));
     
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "hour"), ctx->fromInteger(h));
@@ -688,7 +688,7 @@ static void datetime_finalizer(void* ptr) {
 }
 
 static DateTimeState* get_datetime_state(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
-    const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, "__datetime_ptr__");
+    const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, "\001__datetime_ptr__");
     const proto::ProtoObject* ptrObj = self->getAttribute(ctx, key);
     if (ptrObj) {
         const proto::ProtoExternalPointer* ext = ptrObj->asExternalPointer(ctx);
@@ -708,7 +708,7 @@ static const proto::ProtoObject* create_datetime_instance(proto::ProtoContext* c
     const proto::ProtoObject* instance = cls->newChild(ctx, true);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), cls);
     DateTimeState* state = new DateTimeState{y, m, d, h, min, s, ms};
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__datetime_ptr__"),
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "\001__datetime_ptr__"),
                                     ctx->fromExternalPointer(state, datetime_finalizer));
     
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "year"), ctx->fromInteger(y));
@@ -972,7 +972,7 @@ static const proto::ProtoObject* py_time_new(
     const proto::ProtoObject* instance = cls->newChild(ctx, true);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), cls);
     TimeState* state = new TimeState{h, min, s, ms};
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__time_ptr__"),
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "\001__time_ptr__"),
                                     ctx->fromExternalPointer(state, time_finalizer));
     
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "hour"), ctx->fromInteger(h));

@@ -115,7 +115,7 @@ protected:
     const proto::ProtoList* asList(const proto::ProtoObject* obj) {
         if (!obj) return nullptr;
         const proto::ProtoObject* data =
-            obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+            obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "\001__data__"));
         return data ? data->asList(ctx) : nullptr;
     }
 };
@@ -414,7 +414,7 @@ TEST_F(CompilerTest, DictLiteral) {
     auto* d = evalVar("x = {'a': 1, 'b': 2}", "x");
     ASSERT_NE(d, nullptr);
     // Dict stores keys in __keys__; check it's present.
-    auto* keys = d->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"));
+    auto* keys = d->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "\001__keys__"));
     EXPECT_NE(keys, nullptr);
 }
 
@@ -686,7 +686,7 @@ TEST_F(CompilerTest, DictCompBasic) {
     auto* d = evalVar("x = {k: k*2 for k in range(3)}", "x");
     ASSERT_NE(d, nullptr);
     // Dict must have __keys__ with 3 entries.
-    auto* keys = d->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"));
+    auto* keys = d->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "\001__keys__"));
     ASSERT_NE(keys, nullptr);
     auto* kl = keys->asList(ctx);
     ASSERT_NE(kl, nullptr);

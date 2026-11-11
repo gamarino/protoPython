@@ -73,7 +73,7 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__loader__"), PythonEnvironment::getInternedString(ctx, "CompiledModuleProvider")->asObject(ctx));
 
     // Mark the module executed before running it, as for Python modules.
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__executed__"), PROTO_TRUE);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__executed__"), PROTO_TRUE);
 
     // The generated code resolves and binds names through the current frame
     // and the current globals (PythonEnvironment::lookupName / storeName), so
