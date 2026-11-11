@@ -3252,7 +3252,20 @@ bool CppGenerator::generateJoinedStr(JoinedStrNode* n) {
 
 bool CppGenerator::generateFormattedValue(FormattedValueNode* n) {
     if (!n) return false;
-    return generateNode(n->value.get());
+    // The interpreter's OP_FORMAT_VALUE: conversion, then format(value, spec).
+    *out_ << "::protoPython::PythonEnvironment::formatValue(ctx, ";
+    if (!generateNode(n->value.get())) return false;
+    const char conv = (n->conversion == 's' || n->conversion == 'r' || n->conversion == 'a') ? n->conversion : 0;
+    *out_ << ", " << (conv ? std::string("'") + conv + "'" : std::string("0")) << ", ";
+    if (n->format_spec_node) {
+        if (!generateNode(n->format_spec_node.get())) return false;
+    } else if (!n->format_spec.empty()) {
+        *out_ << "ctx->fromUTF8String(\"" << escapeCppString(n->format_spec) << "\")";
+    } else {
+        *out_ << "nullptr";
+    }
+    *out_ << ")";
+    return true;
 }
 
 bool CppGenerator::generateSlice(SliceNode* n) {

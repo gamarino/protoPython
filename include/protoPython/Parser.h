@@ -570,7 +570,8 @@ private:
     std::unique_ptr<ASTNode> parseLambda();
     std::unique_ptr<ASTNode> parseFString();
     /** The parts of an f-string's text (or of a nested format spec) into @p joined. */
-    bool parseFStringBody(const std::string& raw, int firstLine, JoinedStrNode* joined, int specDepth);
+    bool parseFStringBody(const std::string& raw, int firstLine, JoinedStrNode* joined, int specDepth,
+                         bool rawString);
     std::unique_ptr<ASTNode> parseOrExpr();
     std::unique_ptr<ASTNode> parseAndExpr();
     std::unique_ptr<ASTNode> parseNotExpr();

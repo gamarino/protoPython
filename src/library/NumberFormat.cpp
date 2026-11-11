@@ -549,7 +549,7 @@ std::string percentFloat(double value, const std::string& flags, int width, int 
     else if (flags.find(' ') != std::string::npos) s.sign = ' ';
     s.alternate = flags.find('#') != std::string::npos;
     if (left) s.align = '<';
-    else if (flags.find('0') != std::string::npos && std::isfinite(value)) { s.fill = "0"; s.align = '='; }
+    else if (flags.find('0') != std::string::npos) { s.fill = "0"; s.align = '='; }
     s.width = width;
     s.precision = precision < 0 ? 6 : precision;
     s.type = std::string(1, conversion);

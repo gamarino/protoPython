@@ -674,7 +674,7 @@ static const proto::ProtoObject* sys_module_getattr(
         mutableSys->setAttribute(ctx, cacheS, env->initDictStorage(ctx, cache));
     }
     env->resolveModule("importlib", ctx);
-    return sysMod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, name.c_str()));
+    return sysMod->getAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, name));
 }
 
 // sys.unraisablehook(unraisable): the default handler for an exception that
@@ -800,22 +800,26 @@ static const proto::ProtoObject* sys_file_write(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) > 0) {
-        const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
-        if (arg->isString(context)) {
-            std::string s;
-            arg->asString(context)->toUTF8String(context, s);
-            const proto::ProtoObject* streamType = self->getAttribute(context, proto::ProtoString::createSymbol(context, "_stream_type"));
-            if (streamType && streamType->isInteger(context) && streamType->asLong(context) == 2) {
-                fprintf(stderr, "%s", s.c_str());
-                fflush(stderr);
-            } else {
-                fprintf(stdout, "%s", s.c_str());
-                fflush(stdout);
-            }
-        }
+    (void)parentLink; (void)keywordParameters;
+    // TextIOWrapper.write(s): every byte of s (a NUL included) and the
+    // number of characters written.
+    const proto::ProtoObject* arg = positionalParameters->getSize(context) > 0
+        ? positionalParameters->getAt(context, 0) : nullptr;
+    if (!arg || !arg->isString(context)) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
+            env->raiseTypeError(context, "write() argument must be str, not " +
+                                         PythonEnvironment::typeNameOf(context, arg));
+        return nullptr;
     }
-    return context->fromInteger(0); // Return number of characters or 0
+    std::string s;
+    arg->asString(context)->toUTF8String(context, s);
+    const proto::ProtoObject* streamType = self->getAttribute(context, proto::ProtoString::createSymbol(context, "_stream_type"));
+    FILE* stream = (streamType && streamType->isInteger(context) && streamType->asLong(context) == 2) ? stderr : stdout;
+    std::fwrite(s.data(), 1, s.size(), stream);
+    std::fflush(stream);
+    long long chars = 0;
+    for (unsigned char c : s) if ((c & 0xC0) != 0x80) ++chars;
+    return context->fromInteger(chars);
 }
 
 static const proto::ProtoObject* sys_file_flush(

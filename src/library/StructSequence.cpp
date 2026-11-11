@@ -29,7 +29,7 @@ const proto::ProtoObject* newStructSequence(
         visible->asObject(ctx));
     for (const StructSequenceField& field : fields) {
         if (!field.name) continue;
-        obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, field.name),
+        obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, field.name),  // raw-key: a name from a C++ table
             field.value ? field.value : PROTO_NONE);
     }
     return obj;

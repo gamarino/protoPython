@@ -684,7 +684,7 @@ HPy HPySlice_New(HPyContext* hctx, HPy start, HPy stop, HPy step) {
     const HPy hSlice = hctx->fromProtoObject(slice);
     for (const auto& field : {std::make_pair("start", start), std::make_pair("stop", stop), std::make_pair("step", step)}) {
         const proto::ProtoObject* v = hctx->asProtoObject(field.second);
-        slice = slice->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, field.first), v ? v : PROTO_NONE);
+        slice = slice->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, field.first), v ? v : PROTO_NONE);  // raw-key: a name from a C++ table
     }
     return hSlice;
 }

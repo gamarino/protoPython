@@ -48,7 +48,7 @@ static const proto::ProtoObject* py_check_methods(
         if (!methodObj || !methodObj->isString(ctx)) return notImplemented;
         std::string name;
         methodObj->asString(ctx)->toUTF8String(ctx, name);
-        const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, name);
+        const proto::ProtoString* key = PythonEnvironment::pythonAttributeKey(ctx, name);
         bool found = false;
         // C itself first, as definesAll: some native types leave themselves
         // out of their own __mro__.
@@ -281,7 +281,7 @@ bool virtualSubclass(proto::ProtoContext* ctx, PythonEnvironment* env,
     for (const AbcSpec& sub : kAbcSpecs) {
         for (const char* b : sub.bases) {
             if (!b || name != b) continue;
-            const proto::ProtoObject* subAbc = all->getAttribute(ctx,
+            const proto::ProtoObject* subAbc = all->getAttribute(ctx,  // raw-key: a name from a C++ table
                 PythonEnvironment::getInternedString(ctx, sub.name));
             if (subAbc && virtualSubclass(ctx, env, cls, subAbc, depth + 1)) return true;
         }
@@ -829,7 +829,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         const proto::ProtoObject* objProto = env ? env->getObjectPrototype() : nullptr;
         if (!objProto) return;
         auto abcNamed = [&](const std::string& n) {
-            return all->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, n.c_str()));
+            return all->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, n.c_str()));  // raw-key: a name from a C++ table
         };
         const proto::ProtoList* bases = ctx->newList();
         if (const AbcSpec* spec = specByName(name)) {

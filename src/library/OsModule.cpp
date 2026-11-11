@@ -1500,7 +1500,7 @@ static const proto::ProtoObject* py_create_environ(
         if (eq && eq > *p) {
             std::string key(*p, static_cast<size_t>(eq - *p));
             std::string val(eq + 1);
-            dict = dict->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, key.c_str()), 
+            dict = dict->setAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, key), 
                                       PythonEnvironment::getInternedString(ctx, val.c_str())->asObject(ctx));
         }
     }
@@ -2110,7 +2110,7 @@ static char** buildEnvp(proto::ProtoContext* ctx, const proto::ProtoObject* envO
                 item->asString(ctx)->toUTF8String(ctx, k);
                 haveKey = true;
                 const proto::ProtoObject* val = env->getAttribute(ctx, envObj,
-                    PythonEnvironment::getInternedString(ctx, k.c_str()), /*raiseError=*/false);
+                    PythonEnvironment::pythonAttributeKey(ctx, k), /*raiseError=*/false);
                 if (val && val->isString(ctx)) val->asString(ctx)->toUTF8String(ctx, v);
             }
         }

@@ -277,6 +277,9 @@ static int stackEffect(int op, int arg) {
         case OP_BUILD_LIST: case OP_BUILD_TUPLE: case OP_BUILD_SET:
         case OP_BUILD_STRING:
             return 1 - arg;
+        // FORMAT_VALUE: pops the value (and the spec when arg & 4), pushes the str.
+        case OP_FORMAT_VALUE:
+            return (arg & 0x04) ? -1 : 0;
         case OP_BUILD_MAP:
             return 1 - 2 * arg;
         case OP_BUILD_SLICE:
@@ -6666,51 +6669,28 @@ bool Compiler::compileJoinedStr(JoinedStrNode* n) {
 
 bool Compiler::compileFormattedValue(FormattedValueNode* n) {
     if (!n) return false;
-    // Resolve repr/str/ascii through emitNameOp so the load picks the right
-    // opcode (LOAD_FAST / LOAD_GLOBAL / LOAD_NAME) for the current scope.
-    // Previously this site emitted OP_LOAD_NAME unconditionally, which inside
-    // a function body bypassed env->resolve fast-path and could surface a
-    // stray PROTO_NONE from the frame's prototype chain — manifesting as
-    // 'NoneType' object is not callable for f"{x!r}" / !s / !a inside a
-    // function.  emitNameOp also injects the OP_PUSH_NULL ahead of the load
-    // for the 3.11+ calling convention, so we must not emit it here.
-    const char* convName = nullptr;
-    if (n->conversion == 'r')      convName = "repr";
-    else if (n->conversion == 's') convName = "str";
-    else if (n->conversion == 'a') convName = "ascii";
-    // PEP 498: when a format spec is present, render via the format()
-    // builtin so the f-string and `'{:spec}'.format(x)` share one code
-    // path.  Layout the stack as [.., NULL, format, value, spec] before
-    // OP_CALL_FUNCTION 2.  Otherwise leave the bare (possibly
-    // converted) value on the stack — the surrounding OP_BUILD_STRING
-    // handles the str() coercion at join time.
-    if (!n->format_spec.empty() || n->format_spec_node) {
-        if (!emitNameOp("format", TargetCtx::Load, /*pushNull=*/true)) return false;
-        if (convName) {
-            if (!emitNameOp(convName, TargetCtx::Load, /*pushNull=*/true)) return false;
-            if (!compileNode(n->value.get())) return false;
-            emit(OP_CALL_FUNCTION, 1);
-        } else {
-            if (!compileNode(n->value.get())) return false;
-        }
-        if (n->format_spec_node) {
-            // f'{x:{width}}': the spec is itself an f-string.
-            if (!compileNode(n->format_spec_node.get())) return false;
-        } else {
-            int specIdx = addConstant(PythonEnvironment::getInternedString(
-                ctx_, n->format_spec.c_str())->asObject(ctx_));
-            emit(OP_LOAD_CONST, specIdx);
-        }
-        emit(OP_CALL_FUNCTION, 2);
-        return true;
+    // CPython's CONVERT_VALUE + FORMAT_SIMPLE / FORMAT_WITH_SPEC in one
+    // opcode: [value] or [value, spec] -> format(conv(value), spec). Every
+    // field is formatted here, so OP_BUILD_STRING only joins str objects, and
+    // no name is resolved (a user `format`, `str`, `repr` or `ascii` does not
+    // change an f-string).
+    //   arg & 0x03: conversion (0 none, 1 !s, 2 !r, 3 !a); arg & 0x04: spec on the stack.
+    int arg = 0;
+    if (n->conversion == 's') arg = 1;
+    else if (n->conversion == 'r') arg = 2;
+    else if (n->conversion == 'a') arg = 3;
+    if (!compileNode(n->value.get())) return false;
+    if (n->format_spec_node) {
+        // f'{x:{width}}': the spec is itself an f-string.
+        if (!compileNode(n->format_spec_node.get())) return false;
+        arg |= 0x04;
+    } else if (!n->format_spec.empty()) {
+        int specIdx = addConstant(PythonEnvironment::getInternedString(
+            ctx_, n->format_spec.c_str())->asObject(ctx_));
+        emit(OP_LOAD_CONST, specIdx);
+        arg |= 0x04;
     }
-    if (convName) {
-        if (!emitNameOp(convName, TargetCtx::Load, /*pushNull=*/true)) return false;
-        if (!compileNode(n->value.get())) return false;
-        emit(OP_CALL_FUNCTION, 1);
-    } else {
-        if (!compileNode(n->value.get())) return false;
-    }
+    emit(OP_FORMAT_VALUE, arg);
     return true;
 }
 

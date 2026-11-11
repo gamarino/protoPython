@@ -221,7 +221,40 @@ public:
                                                        const std::string& spec);
     static const proto::ProtoObject* formatStringObject(proto::ProtoContext* ctx, const std::string& value,
                                                         const std::string& spec);
-    
+    /**
+     * format(value, spec) as the builtin does: the built-in formatter for an
+     * exact int, bool, float or str (a subclass goes through its type's
+     * __format__, so an override is honoured), type(value).__format__ for
+     * anything else; the result must be a str. @p spec is a str, or nullptr
+     * for ''. Returns nullptr with the exception raised.
+     */
+    /** float(int) exactly rounded; raises OverflowError past the float range. */
+    static double intToDouble(proto::ProtoContext* ctx, const proto::ProtoObject* intObj);
+    /**
+     * A real number operand as a double (CPython's PyFloat_AsDouble): float,
+     * int (OverflowError past the range), bool, __float__, __index__; raises
+     * TypeError "must be real number, not T" otherwise.
+     */
+    static double realToDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** The int equal to an integral double (exact at any size); ValueError
+     *  for NaN, OverflowError for an infinity. */
+    static const proto::ProtoObject* integralDoubleToInt(proto::ProtoContext* ctx, double x);
+    /** a ** b for exact ints and floats, as the interpreter computes it. */
+    static const proto::ProtoObject* numberPower(proto::ProtoContext* ctx, const proto::ProtoObject* a,
+                                                 const proto::ProtoObject* b);
+    /** float ** float (CPython's float_pow: ZeroDivisionError, complex result, OverflowError). */
+    static const proto::ProtoObject* floatPow(proto::ProtoContext* ctx, double x, double y);
+    static const proto::ProtoObject* formatObject(proto::ProtoContext* ctx, const proto::ProtoObject* value,
+                                                  const proto::ProtoObject* spec);
+    /**
+     * One f-string replacement field (CPython's CONVERT_VALUE + FORMAT_SIMPLE /
+     * FORMAT_WITH_SPEC): @p conversion 's', 'r', 'a' or 0, then
+     * formatObject(value, spec). Never resolves a name, so a user binding of
+     * format/str/repr/ascii does not change an f-string.
+     */
+    static const proto::ProtoObject* formatValue(proto::ProtoContext* ctx, const proto::ProtoObject* value,
+                                                 char conversion, const proto::ProtoObject* spec);
+
     /**
      * @brief The interned symbol spelled by a string literal.
      *
@@ -248,7 +281,7 @@ public:
     static bool isInternalKey(proto::ProtoContext* ctx, const proto::ProtoString* name);
     /** Same test on a UTF-8 spelling. */
     static bool isInternalKeySpelling(const std::string& name) {
-        return !name.empty() && name[0] == '\x01';
+        return !name.empty() && name[0] == '\x01';  // escape-boundary
     }
     /*
      * The escaping boundary. Every name Python code supplies becomes a key
@@ -869,6 +902,12 @@ public:
                                          const proto::ProtoObject* bases, const proto::ProtoObject* kwds,
                                          const ClassBody& body, const proto::ProtoObject** anchor);
 
+    /** True when @p ns is a dict used as a namespace (exec/eval globals) and
+     *  @p name is not its own attribute: what the attribute chain finds is
+     *  the dict type's (dict.__name__, dict.get), not a name; the names are
+     *  the dict's items. */
+    bool isDictNamespaceTypeAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* ns,
+                                      const proto::ProtoString* name);
     /** True when `value`, found under `name` in namespace `ns`, is what every
      *  module inherits as an object (its __class__, or a method of the module
      *  prototype such as keys or __init__) rather than a global name. */
@@ -2048,6 +2087,13 @@ public:
               h_(roots_ && obj ? roots_->add(obj) : proto::ProtoRootSet::kNullHandle) {}
         ~TransientPin() {
             if (roots_ && h_ != proto::ProtoRootSet::kNullHandle) roots_->remove(h_);
+        }
+        /** Pins @p obj in place of the object pinned so far (an accumulator). */
+        void reset(const proto::ProtoObject* obj) {
+            if (!roots_) return;
+            const proto::ProtoRootSet::Handle next = obj ? roots_->add(obj) : proto::ProtoRootSet::kNullHandle;
+            if (h_ != proto::ProtoRootSet::kNullHandle) roots_->remove(h_);
+            h_ = next;
         }
         TransientPin(const TransientPin&) = delete;
         TransientPin& operator=(const TransientPin&) = delete;

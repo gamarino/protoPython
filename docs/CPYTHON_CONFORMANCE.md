@@ -85,7 +85,8 @@ defect and adds a `test/regression/*.py` test registered in
   `keys` shadows the dict method: after `exec("def get(k): pass", d)`, `d.get(...)`
   calls that function. A metaclass written in Python receives a dict of the body's
   names instead, so `ABCMeta` is not affected; `n in ns` can be True for a name
-  `ns[n]` does not find.
+  `ns[n]` does not find. Reading a name in such a dict no longer finds the dict
+  type's attributes (round 10: `__name__` read as `'dict'`).
 - **Builtins (found 2026-10-21):** `range` holds 64-bit integers only
   (`range(1 << 1000)` raises; CPython's `longrange_iterator` does not exist);
   `type(iter(range(0)))` is `object` and built-in iterator types leave themselves
@@ -123,6 +124,24 @@ defect and adds a `test/regression/*.py` test registered in
   CPython's value; `hash()` of an int or a float matches CPython's.
   `exec(..., closure=cells)` raises `TypeError`: cells cannot be supplied from
   Python.
+- **Formatting and numbers (found 2026-11-11, review round 10 of 1.2.2):**
+  f-string fields, `format()`, `str.format` and `%` follow CPython, including
+  subclass `__format__`, PEP 701 field syntax and `__index__` / `__float__`
+  operands. Remaining differences: `complex.__format__` takes only an empty
+  spec; `object.__repr__(5)` and `object.__repr__(1.5)` give the value's repr
+  instead of `<int object at 0x...>`; `math.sumprod` of floats sums in plain
+  double precision (CPython uses extended precision, so the last bit can
+  differ); an int power whose result cannot be represented (`2 ** (10**20)`)
+  raises `OverflowError: integer exponentiation result too large` where
+  CPython would try and run out of memory; `math.isqrt`, `gcd`, `lcm`,
+  `factorial` and `ldexp` raise `OverflowError` for ints past 64 bits (CPython
+  computes them), and converting such an int to float says `LargeInteger value
+  exceeds long long range` in `int.__float__`, `complex()`, `sum()` and
+  `divmod()` (CPython: `int too large to convert to float`).
+- **`__dict__` of a function or an instance (found 2026-11-11):** writes
+  through `obj.__dict__` reach the object, but the mapping returned is a
+  snapshot: `d = f.__dict__; f.x = 1` leaves `x` out of `d`, and
+  `f.__dict__ is f.__dict__` is False (CPython returns the live dict).
 - **collections.abc:** the ABCs are native classes without `ABCMeta`; each root ABC's
   `__init_subclass__` computes `__abstractmethods__`, so a subclass whose own
   `__init_subclass__` skips `super()` is not checked for abstract methods.

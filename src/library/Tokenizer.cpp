@@ -457,7 +457,7 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
     // as f-prefix for the body scan and rely on `t.isTString` to
     // distinguish at the compiler / missed-comma level.
     if (isT) { isF = true; t.isTString = true; }
-    if (isF) t.type = TokenType::FString;
+    if (isF) { t.type = TokenType::FString; t.isRawString = isRaw; }
     else if (isB) t.type = TokenType::Bytes;
     
     bool triple = false;
@@ -534,48 +534,22 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                 segStart = pos_;
                 continue;
             }
-            // Real expression: depth-track and skip embedded string literals
-            int depth = 1;
-            while (pos_ < source_.size() && depth > 0) {
-                char ec = source_[pos_++];
-                s += ec;
-                if (ec == '{') {
-                    depth++;
-                } else if (ec == '}') {
-                    depth--;
-                } else if ((ec == '\'' || ec == '"') && depth > 0) {
-                    // Nested string literal inside expression — scan to its end
-                    char innerQuote = ec;
-                    bool innerTriple = false;
-                    if (pos_ + 1 < source_.size()
-                        && source_[pos_] == innerQuote
-                        && source_[pos_+1] == innerQuote) {
-                        innerTriple = true;
-                        s += source_[pos_++];
-                        s += source_[pos_++];
-                    }
-                    while (pos_ < source_.size()) {
-                        if (innerTriple && pos_ + 2 < source_.size()
-                            && source_[pos_] == innerQuote
-                            && source_[pos_+1] == innerQuote
-                            && source_[pos_+2] == innerQuote) {
-                            s += source_[pos_++];
-                            s += source_[pos_++];
-                            s += source_[pos_++];
-                            break;
-                        } else if (!innerTriple && source_[pos_] == innerQuote) {
-                            s += source_[pos_++];
-                            break;
-                        }
-                        char nc = source_[pos_++];
-                        s += nc;
-                        if (nc == '\\' && pos_ < source_.size()) {
-                            s += source_[pos_++];
-                        }
-                    }
-                } else if (ec == '\\' && pos_ < source_.size()) {
-                    s += source_[pos_++];
+            // A replacement field: copied as written (the parser scans it
+            // with the same scanFStringField), up to its closing '}'.
+            FStringField field;
+            scanFStringField(source_, pos_, field);
+            const size_t fieldEnd = field.end == FStringField::npos ? source_.size() : field.end;
+            while (pos_ < fieldEnd) {
+                char fc = source_[pos_++];
+                if (fc == '\r') {
+                    if (pos_ < fieldEnd && source_[pos_] == '\n') pos_++;
+                    fc = '\n';
                 }
+                if (fc == '\n') {
+                    line_++;
+                    lineStartPos_ = pos_;
+                }
+                s += fc;
             }
             segStart = pos_;
             continue;
@@ -1071,6 +1045,183 @@ Token Tokenizer::makeToken(TokenType type) {
     t.line = line_;
     t.column = getColumn();
     return t;
+}
+
+namespace {
+
+// Skips the string literal whose opening quote is at s[i]; returns the index
+// just past its closing quote (s.size() when unterminated).
+size_t skipStringLiteral(const std::string& s, size_t i) {
+    const char q = s[i];
+    const bool triple = i + 2 < s.size() && s[i + 1] == q && s[i + 2] == q;
+    i += triple ? 3 : 1;
+    while (i < s.size()) {
+        const char c = s[i];
+        if (c == '\\') { i += 2; continue; }
+        if (c == q) {
+            if (!triple) return i + 1;
+            if (i + 2 < s.size() && s[i + 1] == q && s[i + 2] == q) return i + 3;
+        }
+        ++i;
+    }
+    return s.size();
+}
+
+void appendUtf8(std::string& out, unsigned cp) {
+    if (cp < 0x80) {
+        out += static_cast<char>(cp);
+    } else if (cp < 0x800) {
+        out += static_cast<char>(0xC0 | (cp >> 6));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+        out += static_cast<char>(0xE0 | (cp >> 12));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+        out += static_cast<char>(0xF0 | (cp >> 18));
+        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+}
+
+int hexDigit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+} // namespace
+
+bool scanFStringField(const std::string& s, size_t i, FStringField& f) {
+    int depth = 0;
+    // The expression (and the optional '=' and conversion).
+    while (i < s.size()) {
+        const char c = s[i];
+        if (c == '\'' || c == '"') { i = skipStringLiteral(s, i); continue; }
+        if (c == '#') {
+            while (i < s.size() && s[i] != '\n') ++i;
+            continue;
+        }
+        if (c == '\\') { i += 2; continue; }
+        if (c == '(' || c == '[' || c == '{') { ++depth; ++i; continue; }
+        if (c == ')' || c == ']' || (c == '}' && depth > 0)) { --depth; ++i; continue; }
+        if (depth > 0) { ++i; continue; }
+        const char nx = i + 1 < s.size() ? s[i + 1] : '\0';
+        if ((c == '!' || c == '<' || c == '>' || c == '=') && nx == '=') { i += 2; continue; }
+        if (c == '=' || c == '!' || c == ':' || c == '}') break;
+        ++i;
+    }
+    if (i >= s.size()) { f.error = "f-string: expecting '}'"; return false; }
+    f.exprEnd = i;
+    if (s[i] == '=') {
+        ++i;
+        while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r' || s[i] == '\f')) ++i;
+        f.debugEnd = i;
+        if (i >= s.size() || (s[i] != '!' && s[i] != ':' && s[i] != '}')) {
+            f.error = "f-string: expecting '!', or ':', or '}'";
+            return false;
+        }
+    }
+    if (s[i] == '!') {
+        f.hasConversion = true;
+        ++i;
+        while (i < s.size() && s[i] != ':' && s[i] != '}') f.conversion += s[i++];
+        if (i >= s.size()) { f.error = "f-string: expecting '}'"; return false; }
+    }
+    if (s[i] == ':') {
+        f.specStart = ++i;
+        while (i < s.size()) {
+            const char c = s[i];
+            if (c == '\\') {
+                if (i + 2 < s.size() && s[i + 1] == 'N' && s[i + 2] == '{') {
+                    const size_t close = s.find('}', i + 3);
+                    i = close == std::string::npos ? s.size() : close + 1;
+                } else {
+                    i += 2;
+                }
+                continue;
+            }
+            if (c == '{') {
+                FStringField inner;
+                if (!scanFStringField(s, i + 1, inner)) { f.error = inner.error; return false; }
+                i = inner.end;
+                continue;
+            }
+            if (c == '}') break;
+            ++i;
+        }
+        if (i >= s.size()) { f.error = "f-string: expecting '}'"; return false; }
+        f.specEnd = i;
+    }
+    // s[i] == '}'
+    f.end = i + 1;
+    return true;
+}
+
+bool decodeStrEscapes(const std::string& t, std::string& out, std::string& error) {
+    for (size_t i = 0; i < t.size(); ++i) {
+        const char c = t[i];
+        if (c != '\\' || i + 1 >= t.size()) { out += c; continue; }
+        const char e = t[++i];
+        switch (e) {
+            case 'n': out += '\n'; break;
+            case 't': out += '\t'; break;
+            case 'r': out += '\r'; break;
+            case 'a': out += '\a'; break;
+            case 'b': out += '\b'; break;
+            case 'f': out += '\f'; break;
+            case 'v': out += '\v'; break;
+            case '\\': out += '\\'; break;
+            case '\'': out += '\''; break;
+            case '"': out += '"'; break;
+            case '\n': break;
+            case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': {
+                unsigned v = static_cast<unsigned>(e - '0');
+                for (int n = 1; n < 3 && i + 1 < t.size() && t[i + 1] >= '0' && t[i + 1] <= '7'; ++n)
+                    v = v * 8 + static_cast<unsigned>(t[++i] - '0');
+                appendUtf8(out, v);
+                break;
+            }
+            case 'x': case 'u': case 'U': {
+                const size_t n = e == 'x' ? 2 : e == 'u' ? 4 : 8;
+                unsigned cp = 0;
+                bool ok = i + n < t.size();
+                for (size_t k = 1; ok && k <= n; ++k) {
+                    const int h = i + k < t.size() ? hexDigit(t[i + k]) : -1;
+                    if (h < 0) ok = false;
+                    else cp = (cp << 4) | static_cast<unsigned>(h);
+                }
+                if (!ok || cp >= 0x110000) {
+                    error = std::string("(unicode error) 'unicodeescape' codec can't decode bytes: ") +
+                            (cp >= 0x110000 ? "illegal Unicode character" : "truncated \\") + e +
+                            (e == 'x' ? "XX escape" : e == 'u' ? "XXXX escape" : "XXXXXXXX escape");
+                    return false;
+                }
+                appendUtf8(out, cp);
+                i += n;
+                break;
+            }
+            case 'N': {
+                const size_t close = (i + 1 < t.size() && t[i + 1] == '{') ? t.find('}', i + 2) : std::string::npos;
+                if (close == std::string::npos || close == i + 2) {
+                    error = "(unicode error) 'unicodeescape' codec can't decode bytes: malformed \\N character escape";
+                    return false;
+                }
+                const int32_t cp = unicode_names::lookup(std::string_view(t).substr(i + 2, close - i - 2));
+                if (cp < 0) {
+                    error = "(unicode error) 'unicodeescape' codec can't decode bytes: unknown Unicode character name";
+                    return false;
+                }
+                appendUtf8(out, static_cast<unsigned>(cp));
+                i = close;
+                break;
+            }
+            default: out += '\\'; out += e; break;
+        }
+    }
+    return true;
 }
 
 } // namespace protoPython

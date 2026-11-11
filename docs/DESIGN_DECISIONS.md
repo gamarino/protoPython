@@ -262,10 +262,22 @@ an internal key. Only two functions apply the rule:
 `PythonEnvironment::storedKeyPythonName` (a stored key to its Python name);
 `pythonAttributeKey`, `pythonAttributeName`, `attributeKeySpelling` and the
 internal-name filters are built on them. `test/static/check_escape_boundary.py`
-(the `static_escape_boundary` ctest) fails on a source line that tests a key
-for U+0001 or prepends it outside a line marked `escape-boundary`, or that
-uses a string it did not escape as an attribute key outside a line marked
-`raw-key:` with its reason (a name the compiler produced).
+(the `static_escape_boundary` ctest) works on statements (comments and line
+breaks removed) and fails on one that compares a character with U+0001 or
+builds the one-character string `"\x01"` outside a line marked
+`escape-boundary`, or that passes to a protoCore attribute call
+(`get`/`set`/`has`/`remove`/`delete...Attribute...`) a key made from a run-time
+string (`->asString()`, or `getInternedString`, `createSymbol`,
+`ProtoString::fromUTF8String` of anything but a literal or a `const char*`
+name), directly or through a local assigned in the 80 lines above, outside a
+line marked `raw-key:` with its reason (a compiler-made name, a name from a
+C++ table, a stored key copied as it is). `static_escape_boundary_probe` runs
+it on `test/static/escape_boundary_probe.cc`, which holds the eight bypass
+forms of the round-9 review, and requires each to be reported. It does not see
+a key built in another function and passed in, a key kept in a member or a
+container, macros, or helpers whose names do not end in `Attribute`; code
+objects built by Python (`code.replace(co_names=...)`) can also carry names
+the compiler would not produce.
 
 **Rationale:** In 1.2.2 the rule was re-implemented at about 70 call sites,
 and each review round found another entry point that skipped it (instance

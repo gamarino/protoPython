@@ -210,6 +210,8 @@ constexpr int OP_BINARY_MATRIX_MULTIPLY = 192;
 constexpr int OP_INPLACE_MATRIX_MULTIPLY = 193;
 constexpr int OP_RERAISE = 194;
 constexpr int OP_JUMP_FORWARD = 195;
+/** FORMAT_VALUE: an f-string field, [value][spec?] -> format(conversion(value), spec);
+ *  arg & 0x03 is the conversion (1 !s, 2 !r, 3 !a), arg & 0x04 says a spec is on the stack. */
 constexpr int OP_FORMAT_VALUE = 196;
 /** Reserved (197-201): defined for opcode-number stability and the _opcode name map; not
  *  emitted by the compiler and not handled by the engine. */

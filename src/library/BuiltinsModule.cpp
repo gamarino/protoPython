@@ -1833,82 +1833,18 @@ static const proto::ProtoObject* py_format(
     const proto::ProtoKeywordArguments* keywordParameters) {
     requireArgs(context, positionalParameters, 1, 0, "format expected at least 1 argument, got %d");
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    // Subclasses of int / float carry their numeric value inside __data__.
-    // Unwrap so the int / float fast paths below recognise them as
-    // numeric and route through the proper minilanguage implementation.
-    {
-        PythonEnvironment* envU = PythonEnvironment::fromContext(context);
-        if (envU && obj && !obj->isInteger(context) && !obj->isDouble(context)) {
-            // bool singletons keep their type: bool.__format__ (int's)
-            // spells them True / False for an empty spec.
-            if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
-            } else {
-                const proto::ProtoObject* data = obj->getAttribute(context, envU->getDataString());
-                if (data && (data->isInteger(context) || data->isDouble(context))) {
-                    obj = data;
-                }
-            }
-        }
-    }
-    // Read the format spec from positional[1] when present; default empty.
-    std::string spec;
+    const proto::ProtoObject* specObj = nullptr;
     if (positionalParameters->getSize(context) >= 2) {
-        const proto::ProtoObject* specObj = positionalParameters->getAt(context, 1);
+        specObj = positionalParameters->getAt(context, 1);
         // CPython: format(value, format_spec) requires format_spec to be a str.
-        // Passing an int / None / list / etc. silently fell through and
-        // produced the unspec'd output, hiding the misuse.  Match CPython:
-        //   TypeError: format() argument 2 must be str, not <type>
-        if (specObj && !specObj->isString(context)) {
-            PythonEnvironment* envE = PythonEnvironment::fromContext(context);
-            if (envE) {
-                std::string clsName = "object";
-                const proto::ProtoObject* cls = envE->getType(context, specObj);
-                if (cls) {
-                    const proto::ProtoObject* nameAttr = cls->getAttribute(context, envE->getNameString());
-                    if (nameAttr && nameAttr->isString(context)) {
-                        nameAttr->asString(context)->toUTF8String(context, clsName);
-                    }
-                }
-                envE->raiseTypeError(context, "format() argument 2 must be str, not " + clsName);
-            }
+        if (!specObj || !specObj->isString(context)) {
+            if (PythonEnvironment* envE = PythonEnvironment::fromContext(context))
+                envE->raiseTypeError(context, "format() argument 2 must be str, not " +
+                                              PythonEnvironment::typeNameOf(context, specObj));
             return nullptr;
         }
-        if (specObj && specObj->isString(context)) {
-            specObj->asString(context)->toUTF8String(context, spec);
-        }
     }
-    if (obj->isDouble(context)) {
-        return PythonEnvironment::formatFloatObject(context, obj->asDouble(context), spec);
-    }
-    if (obj->isInteger(context)) {
-        // Empty spec / no spec → bare decimal. Otherwise route through
-        // __format__ on int (already implemented as py_int_format).
-        if (spec.empty()) return obj->asIntegerString(context, 10)->asObject(context);
-        // Fall through to dunder dispatch below.
-    }
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoString* formatS = env ? env->getFormatString() : PythonEnvironment::getInternedString(context, "__format__");
-
-    // STRUCT-107: special-method lookup goes through TYPE (not the
-    // instance) — `obj.__format__ = …` set on an instance must be
-    // ignored.  Read from `type(obj)`; fall back to native asMethod
-    // (tagged pointer) or callObject (Python def) for invocation.
-    const proto::ProtoObject* objFormatType = env ? env->getType(context, obj) : nullptr;
-    const proto::ProtoObject* formatMethod = (env && objFormatType)
-        ? env->getAttribute(context, objFormatType, formatS, /*raiseError=*/false)
-        : obj->getAttribute(context, formatS);
-    if (!formatMethod || formatMethod == PROTO_NONE) return PROTO_NONE;
-    const proto::ProtoObject* specArg = positionalParameters->getSize(context) >= 2
-        ? positionalParameters->getAt(context, 1)
-        : PythonEnvironment::getInternedString(context, "")->asObject(context);
-    if (formatMethod->asMethod(context)) {
-        const proto::ProtoList* args = context->newList()->appendLast(context, specArg);
-        return formatMethod->asMethod(context)(context, obj, nullptr, argsView(proto::ProtoListArguments(context, args)), nullptr);
-    }
-    if (env) {
-        return env->callObject(formatMethod, { obj, specArg });
-    }
-    return PROTO_NONE;
+    return PythonEnvironment::formatObject(context, obj, specObj);
 }
 
 static const proto::ProtoObject* py_open(
@@ -4052,7 +3988,7 @@ static const proto::ProtoObject* py_super_getattr(
     // the bound super.__get__ descriptor method instead of MRO-walking
     // C's bases (which would fail).  A method is bound to the proxy.
     if (!obj || obj == PROTO_NONE) {
-        const proto::ProtoObject* raw = self->getAttribute(context, nameKey);
+        const proto::ProtoObject* raw = self->getAttribute(context, nameKey);  // raw-key: the handler receives a key, already escaped
         if (raw && raw != PROTO_NONE) {
             if (raw->isMethod(context)) {
                 return context->fromMethod(const_cast<proto::ProtoObject*>(self), raw->asMethod(context));
@@ -6951,6 +6887,12 @@ const proto::ProtoObject* py_type(
         const proto::ProtoString* py_name_s = env ? env->getNameString() : PythonEnvironment::getInternedString(context, "__name__");
         targetClass = targetClass->setAttribute(context, py_name_s, name);
         targetClass = targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "\001__is_python_class__"), PROTO_TRUE);
+        // __qualname__ defaults to the name (a namespace entry, copied below,
+        // overrides it). Without an own one, object's 'object' (or a base
+        // type's, 'tuple' for a namedtuple) was inherited, and pickle looked
+        // the class up under that name.
+        targetClass = targetClass->setAttribute(context,
+            PythonEnvironment::getInternedString(context, "__qualname__"), name);
 
         // 1. Copy dictionary attributes and handle special wrappers
         if (dict) {
@@ -7587,12 +7529,26 @@ const proto::ProtoObject* py_type(
             // Prefer __module__ from the dict argument (3rd arg to type()) over current globals,
             // so that classes created from a body dict already containing __module__ (e.g. via
             // enum._convert_) get the correct module name instead of the executing frame's module.
-            const proto::ProtoObject* moduleFromDict = dict ? dict->getAttribute(context, py_module) : nullptr;
+            // A namespace entry only: getAttribute on a dict reached the
+            // dict type's own __module__ ('builtins').
+            const proto::ProtoObject* moduleFromDict = nullptr;
+            if (dict && env) {
+                const proto::ProtoObject* nsData = dict->getAttribute(context, env->getDataString());
+                const proto::ProtoSparseList* nsSL = nsData ? nsData->asSparseList(context) : nullptr;
+                if (nsSL) moduleFromDict = PythonEnvironment::dictDataGet(context, nsSL, py_module->asObject(context));
+            }
             if (moduleFromDict && moduleFromDict != PROTO_NONE && moduleFromDict->isString(context)) {
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_module, moduleFromDict));
             } else {
-                const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
-                const proto::ProtoObject* moduleName = globals ? globals->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__")) : nullptr;
+                // The calling Python scope's module, as CPython reads the
+                // caller frame's globals (the current globals of a native
+                // call can be builtins', which made every type()-made class
+                // 'builtins.C', unpicklable).
+                const proto::ProtoObject* moduleName = PythonEnvironment::getScopeModuleName(PROTO_UL(0));
+                if (!moduleName) {
+                    const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
+                    moduleName = globals ? globals->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__")) : nullptr;
+                }
                 if (moduleName) {
                     targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_module, moduleName));
                 }
@@ -7734,7 +7690,7 @@ const proto::ProtoObject* py_type(
                 std::string slotName = mangleSlot(slotNameRaw);
                 proto::ProtoObject* descr = const_cast<proto::ProtoObject*>(memberProto->newChild(context, true));
                 descr->setAttribute(context, env->getClassString(), memberProto);
-                const proto::ProtoString* slotNameS = PythonEnvironment::getInternedString(context, slotName.c_str());
+                const proto::ProtoString* slotNameS = PythonEnvironment::pythonAttributeKey(context, slotName);
                 descr->setAttribute(context, env->getNameString(), slotNameS->asObject(context));
                 std::string qn = clsName + "." + slotName;
                 descr->setAttribute(context, PythonEnvironment::getInternedString(context, "__qualname__"),
@@ -10302,31 +10258,63 @@ static const proto::ProtoObject* py_round(
 
     double d = n->asDouble(context);
     if (hasNdigits) {
-        // round(float, ndigits) returns float.
-        if (ndigits > 0) {
-            double power = std::pow(10.0, ndigits);
-            d = std::round(d * power) / power;
-        } else if (ndigits < 0) {
-            double power = std::pow(10.0, -ndigits);
-            d = std::round(d / power) * power;
+        // round(float, ndigits) returns float: x rounded to ndigits decimal
+        // places, correctly, ties to even on the exact binary value (CPython's
+        // double_round). The exact decimal expansion of the double is rounded
+        // as text, then read back.
+        if (!std::isfinite(d) || d == 0.0 || ndigits > 323) return context->fromDouble(d);
+        if (ndigits < -308) return context->fromDouble(0.0 * d);
+        std::string text;
+        if (ndigits >= 0) {
+            // glibc's %.*f is exact and rounds half to even.
+            std::vector<char> buf(static_cast<size_t>(ndigits) + 330);
+            std::snprintf(buf.data(), buf.size(), "%.*f", ndigits, d);
+            text = buf.data();
         } else {
-            d = std::round(d);
+            char buf[1500];
+            std::snprintf(buf, sizeof buf, "%.1100f", std::fabs(d));   // exact
+            std::string all(buf);
+            const size_t dot = all.find('.');
+            std::string ip = all.substr(0, dot);
+            const bool fracNonZero = all.find_first_not_of('0', dot + 1) != std::string::npos;
+            const size_t k = static_cast<size_t>(-ndigits);
+            if (ip.size() < k + 1) ip.insert(0, k + 1 - ip.size(), '0');
+            std::string kept = ip.substr(0, ip.size() - k);
+            const std::string rest = ip.substr(ip.size() - k);
+            bool up = rest[0] > '5';
+            if (rest[0] == '5') {
+                const bool beyond = fracNonZero || rest.find_first_not_of('0', 1) != std::string::npos;
+                up = beyond || ((kept.back() - '0') % 2 == 1);
+            }
+            if (up) {
+                size_t j = kept.size();
+                while (j > 0 && kept[j - 1] == '9') kept[--j] = '0';
+                if (j == 0) kept.insert(0, 1, '1');
+                else ++kept[j - 1];
+            }
+            text = (d < 0 ? "-" : "") + kept + std::string(k, '0');
         }
-        return context->fromDouble(d);
-    } else {
-        // round(float) with no ndigits returns int.
-        double rounded = std::round(d);
-        // Use banker's rounding (round half to even).
-        double lower = std::floor(d);
-        double diff = d - lower;
-        if (diff == 0.5) {
-            // tie-breaking: round to even
-            rounded = (std::fmod(lower, 2.0) == 0.0) ? lower : lower + 1.0;
-        } else if (diff == -0.5) {
-            rounded = (std::fmod(lower, 2.0) == 0.0) ? lower : lower - 1.0;
+        const double r = std::strtod(text.c_str(), nullptr);
+        if (std::isinf(r)) {
+            if (env) env->raiseOverflowError(context, "rounded value too large to represent");
+            return nullptr;
         }
-        return context->fromInteger(static_cast<int>(static_cast<long long>(rounded)));
+        return context->fromDouble(r == 0.0 ? std::copysign(0.0, d) : r);
     }
+    // round(float) with no ndigits returns int, ties to even.
+    if (std::isnan(d)) {
+        if (env) env->raiseValueError(context, PythonEnvironment::newStr(context, "cannot convert float NaN to integer"));
+        return nullptr;
+    }
+    if (std::isinf(d)) {
+        if (env) env->raiseOverflowError(context, "cannot convert float infinity to integer");
+        return nullptr;
+    }
+    const double rounded = std::nearbyint(d);   // the default rounding mode: half to even
+    if (std::fabs(rounded) < 9.2e18) return context->fromInteger(static_cast<long long>(rounded));
+    char big[400];
+    std::snprintf(big, sizeof big, "%.0f", rounded);   // exact for an integral double
+    return context->fromString(big, 10);
 }
 
 static const proto::ProtoObject* py_range_next(
@@ -11987,7 +11975,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                     "readonly attribute", nm);
                 return nullptr;
             }
-            const proto::ProtoString* key = PythonEnvironment::getInternedString(context, nm.c_str());
+            const proto::ProtoString* key = PythonEnvironment::pythonAttributeKey(context, nm);
             const_cast<proto::ProtoObject*>(target)->setAttribute(context, key, val);
             return PROTO_NONE;
         }));

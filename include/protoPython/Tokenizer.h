@@ -139,7 +139,40 @@ struct Token {
     // t-strings as "string.templatelib.Template".  Set only when
     // type == FString.
     bool isTString = false;
+    // True when the FString token's prefix included 'r': escapes in a
+    // replacement field's format spec are then not processed.
+    bool isRawString = false;
 };
+
+/**
+ * One replacement field of an f-string (PEP 701), scanned from just after
+ * its '{'. The expression part skips string literals (any quotes, triple
+ * quotes, escapes), comments and bracketed text, so ':', '!', '=', '{' and
+ * '}' inside them are part of the expression. At bracket depth 0, '!' not
+ * followed by '=' starts the conversion, a lone '=' (not part of '==', '!=',
+ * '<=', '>=') is the self-documenting '=', ':' starts the format spec, '}'
+ * ends the field. In the spec, a '{' opens a nested field and `\N{...}` is
+ * an escape, not a field.
+ */
+struct FStringField {
+    static constexpr size_t npos = static_cast<size_t>(-1);
+    size_t exprEnd = npos;      // end (exclusive) of the expression text
+    size_t debugEnd = npos;     // with '=': end of "expr=" plus the whitespace after it
+    bool hasConversion = false;
+    std::string conversion;     // the conversion as written (validated by the parser)
+    size_t specStart = npos;    // just after ':'
+    size_t specEnd = npos;      // the closing '}' when there is a spec
+    size_t end = npos;          // just after the closing '}'; npos when unterminated
+    std::string error;          // set for a malformed field
+};
+/** Scans a field of @p s starting at @p start (just after '{'); false on error. */
+bool scanFStringField(const std::string& s, size_t start, FStringField& field);
+/**
+ * Decodes the backslash escapes of a str literal's text (\n, \xhh, \N{name},
+ * octal, ...); an unknown escape keeps its backslash. False, with @p error
+ * set, for a malformed \N, \x, \u or \U escape.
+ */
+bool decodeStrEscapes(const std::string& text, std::string& out, std::string& error);
 
 /** Minimal Python tokenizer for expressions and simple statements. */
 class Tokenizer {

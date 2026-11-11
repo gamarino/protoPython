@@ -38,6 +38,9 @@
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/OpcodeModule.h>
 #include <protoPython/CodecsNative.h>
+#include <map>
+#include <stdexcept>
+#include <tuple>
 #include <protoPython/MarshalModule.h>
 #include <protoPython/ImpModule.h>
 #include <protoPython/WarningsModule.h>
@@ -146,7 +149,7 @@ bool PythonEnvironment::isInternalKey(proto::ProtoContext* ctx, const proto::Pro
     if (n <= 6) {
         std::string text;
         name->toUTF8String(ctx, text);
-        return text[0] == '\x01';
+        return text[0] == '\x01';  // escape-boundary
     }
     // A code point is an embedded value: equal code points are one pointer.
     return name->getAt(ctx, 0) == ctx->fromUnicodeChar(1);
@@ -2210,10 +2213,10 @@ static const proto::ProtoObject* py_object_repr(
     }
     if (!self) return PROTO_NONE;
     if (self->isInteger(context)) {
-        return PythonEnvironment::getInternedString(context, std::to_string(self->asLong(context)).c_str())->asObject(context);
+        return self->asIntegerString(context, 10)->asObject(context);
     }
     if (self->isDouble(context)) {
-        return PythonEnvironment::getInternedString(context, std::to_string(self->asDouble(context)).c_str())->asObject(context);
+        return PythonEnvironment::newStr(context, protoPython::numfmt::floatRepr(self->asDouble(context)));
     }
     if (self->isString(context)) {
         std::string s;
@@ -2399,6 +2402,20 @@ static void instanceDictOwnerRemove(proto::ProtoContext* ctx, PythonEnvironment*
     // and `o.a` must both see it gone.
     nm = PythonEnvironment::pythonAttributeKey(ctx, nm);
     if (owner->hasOwnAttribute(ctx, nm) == PROTO_TRUE) o->removeAttribute(ctx, nm);
+}
+
+// A function's own attributes that are its slots in CPython (getset or member
+// descriptors of the function type), never entries of its __dict__.
+static bool isFunctionSlotName(const std::string& nm) {
+    static const std::unordered_set<std::string> kSlots = {
+        "__code__", "__globals__", "__name__", "__qualname__", "__doc__", "__module__",
+        "__defaults__", "__kwdefaults__", "__closure__", "__annotations__", "__annotate__",
+        "__type_params__", "__builtins__", "__class__"};
+    return kSlots.count(nm) != 0;
+}
+
+static bool isPlainFunction(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* obj) {
+    return env->getFunctionPrototype() && env->getType(ctx, obj) == env->getFunctionPrototype();
 }
 
 static const proto::ProtoObject* py_object_get_dict(
@@ -2608,6 +2625,9 @@ static const proto::ProtoObject* py_object_get_dict(
     // Detect via the class's `__name__` so this works even without a
     // dedicated env-level prototype accessor.
     bool isStaticOrClassMethod = false;
+    // A function: its namespace is its own attributes minus its slots
+    // (__code__, __name__, ...), written through like an instance's.
+    const bool isFunction = isPlainFunction(context, env, mutableSelf);
     {
         const proto::ProtoObject* selfCls = env->getType(context, mutableSelf);
         if (selfCls && selfCls != PROTO_NONE) {
@@ -2623,7 +2643,7 @@ static const proto::ProtoObject* py_object_get_dict(
 
     const proto::ProtoObject* data = nullptr;
     const proto::ProtoObject* keys = nullptr;
-    if (isBuiltinSubclass || isStaticOrClassMethod) {
+    if (isBuiltinSubclass || isStaticOrClassMethod || isFunction) {
         // Snapshot: walk the own attributes, skip the
         // built-in's internal slots and our own __pydict_* book-keeping,
         // and build fresh __data__/__keys__ for the proxy.
@@ -2635,7 +2655,8 @@ static const proto::ProtoObject* py_object_get_dict(
                 const proto::ProtoSparseList* dl;
                 const proto::ProtoList* kl;
                 bool stripWrapperInternals;
-            } sn{context, dl, kl, isStaticOrClassMethod};
+                bool stripFunctionSlots;
+            } sn{context, dl, kl, isStaticOrClassMethod, isFunction};
             // Own attribute names are unique, so each name is appended once.
             mutableSelf->processOwnAttributes(context, &sn,
                 +[](proto::ProtoContext* ctx, void* userData,
@@ -2648,7 +2669,9 @@ static const proto::ProtoObject* py_object_get_dict(
                     // Always skip the runtime's own internal storage —
                     // these never belong in any user-visible __dict__.
                     if (!escaped && PythonEnvironment::isInternalKeySpelling(nm)) return;
-                    if (s->stripWrapperInternals) {
+                    if (s->stripFunctionSlots) {
+                        if (!escaped && isFunctionSlotName(nm)) return;
+                    } else if (s->stripWrapperInternals) {
                         // staticmethod / classmethod: hide the wrapper-
                         // internal storage names that are never part of
                         // CPython's user-visible wrapper dict.
@@ -3339,11 +3362,14 @@ static const proto::ProtoObject* py_int_call(
             // double is UB and was returning LLONG_MIN.
             double d = std::trunc(val->asDouble(ctx));
             if (std::isnan(d) || std::isinf(d)) {
+                // CPython: ValueError for NaN, OverflowError for an infinity.
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                if (env) env->raiseValueError(ctx,
-                    PythonEnvironment::getInternedString(ctx,
-                        std::isnan(d) ? "cannot convert float NaN to integer"
-                                       : "cannot convert float infinity to integer")->asObject(ctx));
+                if (env && std::isnan(d)) {
+                    env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx,
+                        "cannot convert float NaN to integer")->asObject(ctx));
+                } else if (env) {
+                    env->raiseOverflowError(ctx, "cannot convert float infinity to integer");
+                }
                 return nullptr;
             }
             constexpr double LL_MIN_D = -9.223372036854776e18;
@@ -3745,7 +3771,7 @@ static const proto::ProtoObject* py_object_str(
         const proto::ProtoString* s = self->asIntegerString(context, 10);
         return s->asObject(context);
     }
-    if (self->isDouble(context)) return PythonEnvironment::getInternedString(context, std::to_string(self->asDouble(context)).c_str())->asObject(context);
+    if (self->isDouble(context)) return PythonEnvironment::newStr(context, protoPython::numfmt::floatRepr(self->asDouble(context)));
     if (self == PROTO_TRUE) return PythonEnvironment::getInternedString(context, "True")->asObject(context);
     if (self == PROTO_FALSE) return PythonEnvironment::getInternedString(context, "False")->asObject(context);
 
@@ -7915,6 +7941,18 @@ static const proto::ProtoObject* py_none_repr(
 
 static const proto::ProtoObject* intOperandValue(proto::ProtoContext* context, const proto::ProtoObject* x);
 
+// The decimal text of an int: a small int by std::to_chars (protoCore's
+// asIntegerString runs a bignum division even for a tagged value), anything
+// larger by protoCore.
+static const proto::ProtoObject* intDecimalString(proto::ProtoContext* context, const proto::ProtoObject* intObj) {
+    if (proto::isSmallInt(intObj)) {
+        char buf[24];
+        const auto r = std::to_chars(buf, buf + sizeof buf, static_cast<long long>(proto::asSmallInt(intObj)));
+        return PythonEnvironment::newStr(context, std::string(buf, r.ptr));
+    }
+    return intObj->asIntegerString(context, 10)->asObject(context);
+}
+
 static const proto::ProtoObject* py_int_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -7922,10 +7960,7 @@ static const proto::ProtoObject* py_int_repr(
     // Route through protoCore's asIntegerString so bignums survive repr; a
     // bool or an int subclass instance is its int value.
     const proto::ProtoObject* intObj = intOperandValue(context, self);
-    if (intObj && intObj->isInteger(context)) {
-        const proto::ProtoString* s = intObj->asIntegerString(context, 10);
-        if (s) return s->asObject(context);
-    }
+    if (intObj && intObj->isInteger(context)) return intDecimalString(context, intObj);
     return PythonEnvironment::getInternedString(context, "0")->asObject(context);
 }
 
@@ -10602,6 +10637,65 @@ static bool intValueToDouble(proto::ProtoContext* context, const proto::ProtoObj
     return true;
 }
 
+double PythonEnvironment::intToDouble(proto::ProtoContext* context, const proto::ProtoObject* intObj) {
+    double d = 0.0;
+    intValueToDouble(context, intObj, d);   // raises OverflowError past the float range
+    return d;
+}
+
+// PyFloat_AsDouble: a float (or subclass), an int (exactly rounded,
+// OverflowError past the range), else the type's __float__ or __index__;
+// TypeError "must be real number, not T" for anything else.
+const proto::ProtoObject* PythonEnvironment::integralDoubleToInt(proto::ProtoContext* ctx, double x) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (std::isnan(x)) {
+        if (env) env->raiseValueError(ctx, PythonEnvironment::newStr(ctx, "cannot convert float NaN to integer"));
+        return nullptr;
+    }
+    if (std::isinf(x)) {
+        if (env) env->raiseOverflowError(ctx, "cannot convert float infinity to integer");
+        return nullptr;
+    }
+    if (std::fabs(x) < 9.2e18) return ctx->fromInteger(static_cast<long long>(x));
+    char buf[400];
+    std::snprintf(buf, sizeof buf, "%.0f", x);   // exact: x is integral
+    return ctx->fromString(buf, 10);
+}
+
+double PythonEnvironment::realToDouble(proto::ProtoContext* context, const proto::ProtoObject* obj) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (obj == PROTO_TRUE) return 1.0;
+    if (obj == PROTO_FALSE) return 0.0;
+    if (obj && obj != PROTO_NONE) {
+        if (obj->isDouble(context)) return obj->asDouble(context);
+        if (obj->isInteger(context)) return intToDouble(context, obj);
+        if (!obj->isString(context) && env) {
+            const proto::ProtoObject* data = obj->getAttribute(context, env->getDataString());
+            if (data && data->isDouble(context)) return data->asDouble(context);
+            if (data && data->isInteger(context)) return intToDouble(context, data);
+            const proto::ProtoObject* cls = env->getType(context, obj);
+            for (const char* dunder : {"__float__", "__index__"}) {
+                const proto::ProtoObject* m = cls ? env->getAttribute(context, cls,
+                    PythonEnvironment::getInternedString(context, dunder), false) : nullptr;
+                if (!m || m == PROTO_NONE) continue;
+                const proto::ProtoObject* r = env->callMethod(obj, dunder, {});
+                if (!r) return 0.0;
+                if (r->isDouble(context)) return r->asDouble(context);
+                if (r->isInteger(context) && dunder[2] == 'i') return intToDouble(context, r);
+                const proto::ProtoObject* rd = r->getAttribute(context, env->getDataString());
+                if (rd && rd->isDouble(context) && dunder[2] == 'f') return rd->asDouble(context);
+                if (rd && rd->isInteger(context) && dunder[2] == 'i') return intToDouble(context, rd);
+                env->raiseTypeError(context, std::string(dunder[2] == 'f' ? "__float__ returned non-float (type "
+                                                                         : "__index__ returned non-int (type ") +
+                                                 PythonEnvironment::typeNameOf(context, r) + ")");
+                return 0.0;
+            }
+        }
+    }
+    if (env) env->raiseTypeError(context, "must be real number, not " + PythonEnvironment::typeNameOf(context, obj));
+    return 0.0;
+}
+
 // The digits of |intObj| in `base` (2, 8, 10 or 16; lower-case letters) and
 // its sign. Exact at any size; a SmallInteger skips the ProtoString.
 static std::string intMagnitudeDigits(proto::ProtoContext* context, const proto::ProtoObject* intObj,
@@ -10678,6 +10772,118 @@ const proto::ProtoObject* PythonEnvironment::formatFloatObject(proto::ProtoConte
     return nullptr;
 }
 
+// format(obj, spec) as text for an exact small int, float or str, the common
+// fields of str.format: no str object is made for the spec or the result.
+// False for any other value or a spec error, which formatObject then handles
+// (and raises).
+static bool formatExactToText(proto::ProtoContext* context, const proto::ProtoObject* obj,
+                              const std::string& spec, std::string& out) {
+    protoPython::numfmt::Result r;
+    if (proto::isSmallInt(obj)) {
+        const long long v = proto::asSmallInt(obj);
+        bool negative = false;
+        auto digits = [&](int base) { return intMagnitudeDigits(context, obj, base, negative); };
+        auto toDouble = [&](double& d) { d = static_cast<double>(v); return true; };
+        r = protoPython::numfmt::formatInt(v < 0, digits, toDouble, spec);
+    } else if (obj->isDouble(context)) {
+        if (spec.empty()) { out += protoPython::numfmt::floatRepr(obj->asDouble(context)); return true; }
+        r = protoPython::numfmt::formatFloat(obj->asDouble(context), spec);
+    } else if (proto::ProtoObject::isStringTagFast(obj)) {
+        std::string text;
+        obj->asString(context)->toUTF8String(context, text);
+        if (spec.empty()) { out += text; return true; }
+        r = protoPython::numfmt::formatString(text, spec);
+    } else {
+        return false;
+    }
+    if (r.err != protoPython::numfmt::Error::None) return false;
+    out += r.text;
+    return true;
+}
+
+// format(value, spec): see PythonEnvironment::formatObject.
+const proto::ProtoObject* PythonEnvironment::formatObject(proto::ProtoContext* context,
+                                                          const proto::ProtoObject* obj,
+                                                          const proto::ProtoObject* specObj) {
+    if (!obj) obj = PROTO_NONE;
+    const bool emptySpec = !specObj || specObj->asString(context)->getSize(context) == 0;
+    // Exact built-in types: a raw tagged value is never a subclass instance
+    // (those are objects carrying __data__), so its __format__ is known.
+    if (obj->isDouble(context)) {
+        const double d = obj->asDouble(context);
+        if (emptySpec) return PythonEnvironment::newStr(context, protoPython::numfmt::floatRepr(d));
+        std::string spec;
+        specObj->asString(context)->toUTF8String(context, spec);
+        return PythonEnvironment::formatFloatObject(context, d, spec);
+    }
+    if (obj->isInteger(context) || obj == PROTO_TRUE || obj == PROTO_FALSE) {
+        if (emptySpec && obj->isInteger(context)) return intDecimalString(context, obj);
+        std::string spec;
+        if (!emptySpec) specObj->asString(context)->toUTF8String(context, spec);
+        return PythonEnvironment::formatIntObject(context, obj, spec);
+    }
+    if (proto::ProtoObject::isStringTagFast(obj)) {   // an exact str (not a subclass wrapper)
+        if (emptySpec) return obj;
+        std::string text, spec;
+        obj->asString(context)->toUTF8String(context, text);
+        specObj->asString(context)->toUTF8String(context, spec);
+        return PythonEnvironment::formatStringObject(context, text, spec);
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return nullptr;
+    // Special-method lookup goes through the type (an instance attribute
+    // named __format__ is ignored).
+    const proto::ProtoObject* cls = env->getType(context, obj);
+    const proto::ProtoObject* formatMethod = cls
+        ? env->getAttribute(context, cls, env->getFormatString(), /*raiseError=*/false) : nullptr;
+    if (!formatMethod || formatMethod == PROTO_NONE) {
+        env->raiseTypeError(context, "Type " + PythonEnvironment::typeNameOf(context, obj) +
+                                     " doesn't define __format__");
+        return nullptr;
+    }
+    const proto::ProtoObject* specArg = specObj ? specObj
+        : PythonEnvironment::getInternedString(context, "")->asObject(context);
+    PythonEnvironment::TransientPin pinObj(env, obj);
+    PythonEnvironment::TransientPin pinSpec(env, specArg);
+    const proto::ProtoObject* result = nullptr;
+    if (formatMethod->asMethod(context)) {
+        const proto::ProtoList* args = context->newList()->appendLast(context, specArg);
+        result = formatMethod->asMethod(context)(context, obj, nullptr,
+                                                 argsView(proto::ProtoListArguments(context, args)), nullptr);
+    } else {
+        result = env->callObject(formatMethod, {obj, specArg});
+    }
+    if (!result) return nullptr;
+    if (result->isString(context)) return result;
+    // A str subclass instance is a str too.
+    const proto::ProtoObject* data = result->getAttribute(context, env->getDataString());
+    if (data && data->isString(context) && result != PROTO_NONE) return result;
+    env->raiseTypeError(context, "__format__ must return a str, not " + PythonEnvironment::typeNameOf(context, result));
+    return nullptr;
+}
+
+const proto::ProtoObject* PythonEnvironment::formatValue(proto::ProtoContext* context,
+                                                         const proto::ProtoObject* value, char conversion,
+                                                         const proto::ProtoObject* spec) {
+    if (!value) value = PROTO_NONE;
+    if (conversion) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (conversion == 's') {
+            if (!proto::ProtoObject::isStringTagFast(value)) {
+                if (!env) return nullptr;
+                PythonEnvironment::TransientPin pinSpec(env, spec);
+                value = env->callObject(env->getStrPrototype(), {value});
+                if (!value) return nullptr;
+            }
+        } else {
+            std::string r = PythonEnvironment::reprObject(context, value);
+            if (conversion == 'a') r = PythonEnvironment::asciiEscape(r);
+            value = PythonEnvironment::newStr(context, r);
+        }
+    }
+    return formatObject(context, value, spec);
+}
+
 static const proto::ProtoObject* py_int_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -10723,6 +10929,11 @@ static const proto::ProtoObject* py_str_format_dunder(
         const proto::ProtoObject* specArg = posArgs->getAt(context, static_cast<int>(specIdx));
         if (specArg && specArg->isString(context)) {
             specArg->asString(context)->toUTF8String(context, spec);
+        } else {
+            if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
+                env->raiseTypeError(context, "__format__() argument must be str, not " +
+                                             PythonEnvironment::typeNameOf(context, specArg));
+            return nullptr;
         }
     }
     if (spec.empty()) return s->asObject(context);
@@ -11124,7 +11335,7 @@ static const proto::ProtoObject* py_int_pow(
     const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     if (!args) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    long long base, exp, mod = 0;
+    long long base = 0, exp = 0, mod = 0;
     // Bound form: self is the base, args=[exp[, mod]].
     // Unbound form: self is intPrototype/null, args=[base, exp[, mod]].
     // Wrapped subclass-of-int instance also counts as a bound receiver:
@@ -11149,20 +11360,33 @@ static const proto::ProtoObject* py_int_pow(
             }
             return nullptr;
         }
-        if (!int_value(ctx, self, &base)) {
+        if (!intOperandValue(ctx, self)) {
             return env ? env->getNotImplementedPrototype() : PROTO_NONE;
         }
         expIdx = 0;
         modIdx = 1;
     } else {
         if (args->getSize(ctx) < 2) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
-        if (!int_value(ctx, args->getAt(ctx, 0), &base)) {
+        if (!intOperandValue(ctx, args->getAt(ctx, 0))) {
             return env ? env->getNotImplementedPrototype() : PROTO_NONE;
         }
         expIdx = 1;
         modIdx = 2;
     }
     bool hasMod = (args->getSize(ctx) > (proto::proto_ulong)modIdx && args->getAt(ctx, modIdx) != PROTO_NONE);
+    {
+        // Exact at any size: the interpreter's `**` without a modulus, the
+        // builtin pow() with one (the long long loop below wrapped around:
+        // (2).__pow__(100) was 0).
+        const proto::ProtoObject* baseObj = intOperandValue(ctx, selfIsIntInstance ? self : args->getAt(ctx, 0));
+        const proto::ProtoObject* expObj = intOperandValue(ctx, args->getAt(ctx, expIdx));
+        const proto::ProtoObject* modObj = hasMod ? intOperandValue(ctx, args->getAt(ctx, modIdx)) : nullptr;
+        if (!baseObj || !expObj || (hasMod && !modObj)) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        if (!hasMod) return PythonEnvironment::numberPower(ctx, baseObj, expObj);
+        const proto::ProtoObject* powFn = env && env->getBuiltins()
+            ? env->getBuiltins()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "pow")) : nullptr;
+        if (powFn && env) return env->callObject(powFn, {baseObj, expObj, modObj});
+    }
     if (!int_value(ctx, args->getAt(ctx, expIdx), &exp)) {
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
@@ -14938,172 +15162,6 @@ static const proto::ProtoObject* py_str_upper(
     return PythonEnvironment::newStr(context, s);
 }
 
-// Apply a format spec (like "02d", ".2f", ">10s") to an object's string representation.
-// Mirror CPython's default __format__: when the spec is empty, the
-// conversion is `str(obj)`, not `repr(obj)`.  reprObject quotes strings
-// (`'a'`) which is the right shape for `{!r}` but wrong for `{}`.
-static std::string applyFormatSpec(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& spec) {
-    if (spec.empty()) {
-        if (obj && obj->isString(context)) {
-            std::string s;
-            obj->asString(context)->toUTF8String(context, s);
-            return s;
-        }
-        return PythonEnvironment::reprObject(context, obj);
-    }
-    // Parse the format spec: [[fill]align][sign][#][0][width][grouping][.precision][type]
-    size_t si = 0;
-    char fill = ' ';
-    char align = '\0';
-    // Check for optional [[fill]align]
-    if (spec.size() >= 2 && (spec[1] == '<' || spec[1] == '>' || spec[1] == '^' || spec[1] == '=')) {
-        fill = spec[si++];
-        align = spec[si++];
-    } else if (si < spec.size() && (spec[si] == '<' || spec[si] == '>' || spec[si] == '^' || spec[si] == '=')) {
-        align = spec[si++];
-    }
-    // Sign
-    char signChar = '\0';
-    if (si < spec.size() && (spec[si] == '+' || spec[si] == '-' || spec[si] == ' '))
-        signChar = spec[si++];
-    // '#' alt form
-    bool altForm = false;
-    if (si < spec.size() && spec[si] == '#') { altForm = true; si++; }
-    // Zero-fill flag: a leading '0' before width digits is always the zero-fill flag
-    if (si < spec.size() && spec[si] == '0') {
-        si++;  // consume the zero-fill flag
-        if (align == '\0') { align = '='; fill = '0'; }
-    }
-    // Width (digits after optional zero-fill)
-    int width = 0;
-    while (si < spec.size() && spec[si] >= '0' && spec[si] <= '9')
-        width = width * 10 + (spec[si++] - '0');
-    // Grouping (PEP 378 thousands separator).
-    char groupChar = '\0';
-    if (si < spec.size() && (spec[si] == '_' || spec[si] == ',')) {
-        groupChar = spec[si++];
-    }
-    // Precision
-    int prec = -1;
-    if (si < spec.size() && spec[si] == '.') {
-        si++;
-        prec = 0;
-        while (si < spec.size() && spec[si] >= '0' && spec[si] <= '9')
-            prec = prec * 10 + (spec[si++] - '0');
-    }
-    // Type
-    char type = '\0';
-    if (si < spec.size()) type = spec[si];
-
-    // Build snprintf-compatible format string and convert object
-    std::string result;
-    if (type == 'd' || type == 'i' || type == 'o' || type == 'x' || type == 'X'
-        || type == 'b' || type == 'u' || type == 'n') {
-        long long v = obj ? obj->asLong(context) : 0LL;
-        // Reconstruct a C format string
-        std::string cfmt = "%";
-        if (signChar) cfmt += signChar;
-        if (altForm && (type == 'x' || type == 'X' || type == 'o')) cfmt += '#';
-        if (fill == '0' && (align == '=' || align == '\0')) cfmt += '0';
-        if (width > 0) cfmt += std::to_string(width);
-        if (prec >= 0) { cfmt += '.'; cfmt += std::to_string(prec); }
-        cfmt += "ll";
-        if (type == 'b') {
-            // binary: manual
-            if (v == 0) { result = "0"; }
-            else {
-                unsigned long long uv = static_cast<unsigned long long>(v);
-                result = "";
-                while (uv > 0) { result = (char)('0' + (uv & 1)) + result; uv >>= 1; }
-            }
-            if (altForm) result = "0b" + result;
-        } else {
-            char t = (type == 'u' || type == 'n') ? 'd' : type;
-            cfmt += t;
-            char buf[128]; snprintf(buf, sizeof(buf), cfmt.c_str(), v);
-            result = buf;
-        }
-    } else if (type == 'f' || type == 'F' || type == 'e' || type == 'E'
-               || type == 'g' || type == 'G' || type == '%') {
-        double v = obj ? obj->asDouble(context) : 0.0;
-        if (type == '%') v *= 100.0;
-        std::string cfmt = "%";
-        if (signChar) cfmt += signChar;
-        if (fill == '0' && (align == '=' || align == '\0')) cfmt += '0';
-        if (width > 0) cfmt += std::to_string(width);
-        if (prec >= 0) { cfmt += '.'; cfmt += std::to_string(prec); }
-        else if (type == 'f' || type == 'F' || type == '%') { cfmt += ".6"; }
-        cfmt += (type == '%') ? 'f' : type;
-        char buf[256]; snprintf(buf, sizeof(buf), cfmt.c_str(), v);
-        result = buf;
-        if (type == '%') result += '%';
-    } else if (type == 's' || type == '\0') {
-        // 's' (and the default '\0' for non-numeric types) mirrors str(),
-        // not repr(): a string renders as its bare content, never quoted.
-        if (obj && obj->isString(context)) {
-            obj->asString(context)->toUTF8String(context, result);
-        } else {
-            result = PythonEnvironment::reprObject(context, obj);
-        }
-        if (prec >= 0 && static_cast<int>(result.size()) > prec)
-            result = result.substr(0, prec);
-    } else if (type == 'c') {
-        if (obj && obj->isString(context)) {
-            std::string s; obj->asString(context)->toUTF8String(context, s);
-            result = s.empty() ? "" : std::string(1, s[0]);
-        } else {
-            result = std::string(1, static_cast<char>(obj ? obj->asLong(context) : 0));
-        }
-    } else {
-        result = PythonEnvironment::reprObject(context, obj);
-    }
-
-    // PEP 378 grouping — insert `groupChar` every N digits from the
-    // right of the integer (or "before the decimal point" for floats)
-    // BEFORE the width / alignment pass below.  groupSize is 3 for
-    // base 10, 4 for hex / oct / bin (matches CPython for `_`).
-    if (groupChar != '\0' && !result.empty()) {
-        int groupSize = (type == 'b' || type == 'o' || type == 'x' || type == 'X') ? 4 : 3;
-        // Identify the integer portion.  For floats with a '.' or 'e'
-        // separator the comma applies to digits before that mark.
-        size_t intEnd = result.size();
-        for (size_t k = 0; k < result.size(); ++k) {
-            if (result[k] == '.' || result[k] == 'e' || result[k] == 'E') { intEnd = k; break; }
-        }
-        size_t intStart = 0;
-        // Skip a leading sign / 0x prefix.
-        if (intStart < intEnd && (result[intStart] == '+' || result[intStart] == '-' || result[intStart] == ' ')) ++intStart;
-        if (intStart + 1 < intEnd && result[intStart] == '0'
-            && (result[intStart + 1] == 'x' || result[intStart + 1] == 'X'
-             || result[intStart + 1] == 'o' || result[intStart + 1] == 'b')) intStart += 2;
-        std::string head = result.substr(0, intStart);
-        std::string digits = result.substr(intStart, intEnd - intStart);
-        std::string rest = result.substr(intEnd);
-        std::string grouped;
-        int count = 0;
-        for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
-            if (count > 0 && count % groupSize == 0) grouped.insert(grouped.begin(), groupChar);
-            grouped.insert(grouped.begin(), *it);
-            ++count;
-        }
-        result = head + grouped + rest;
-    }
-
-    // Apply width and alignment
-    if (width > 0 && static_cast<int>(result.size()) < width) {
-        int pad = width - static_cast<int>(result.size());
-        if (align == '<' || (align == '\0' && (type == 's' || type == '\0'))) {
-            result = result + std::string(pad, fill);
-        } else if (align == '^') {
-            int lpad = pad / 2, rpad = pad - lpad;
-            result = std::string(lpad, fill) + result + std::string(rpad, fill);
-        } else {
-            // '>' or '=' or default for numbers
-            result = std::string(pad, fill) + result;
-        }
-    }
-    return result;
-}
 
 // The mapping str.format_map() resolves named fields from, for the
 // py_str_format call it makes on this thread (nullptr otherwise).
@@ -15136,6 +15194,10 @@ static const proto::ProtoObject* py_str_format(
         if (tpl[i] == '}' && i + 1 < tpl.size() && tpl[i + 1] == '}') {
             out += '}'; i++; continue;
         }
+        if (tpl[i] == '}') {
+            if (env) env->raiseValueError(context, PythonEnvironment::newStr(context, "Single '}' encountered in format string"));
+            return nullptr;
+        }
         if (tpl[i] != '{') { out += tpl[i]; continue; }
 
         // Find matching '}'
@@ -15146,6 +15208,16 @@ static const proto::ProtoObject* py_str_format(
             if (tpl[i] == '{') ++depth;
             else if (tpl[i] == '}') --depth;
             if (depth > 0) ++i;
+        }
+        if (depth > 0) {
+            // CPython's three messages for an unterminated field.
+            const std::string rest = tpl.substr(fieldStart);
+            const size_t colon = rest.find(':');
+            const char* msg = rest.empty() ? "Single '{' encountered in format string"
+                : (colon != std::string::npos && rest.find('{', colon) != std::string::npos)
+                    ? "unmatched '{' in format spec" : "expected '}' before end of string";
+            if (env) env->raiseValueError(context, PythonEnvironment::newStr(context, msg));
+            return nullptr;
         }
         std::string field = tpl.substr(fieldStart, i - fieldStart);
 
@@ -15271,30 +15343,15 @@ static const proto::ProtoObject* py_str_format(
                 if (val && val != PROTO_NONE) {
                     if (numeric) {
                         long long idx = std::stoll(keyText);
-                        const proto::ProtoObject* getitemM = env
-                            ? env->getAttribute(context, val,
-                                PythonEnvironment::getInternedString(context, "__getitem__"), false)
-                            : nullptr;
-                        if (getitemM && getitemM->asMethod(context)) {
-                            const proto::ProtoList* ga = context->newList()
-                                ->appendLast(context, context->fromInteger(idx));
-                            const proto::ProtoObject* next = getitemM->asMethod(context)(
-                                context, val, nullptr, argsView(proto::ProtoListArguments(context, ga)), nullptr);
-                            val = next ? next : PROTO_NONE;
-                        }
+                        const proto::ProtoObject* next = env ? env->getItem(val, context->fromInteger(idx)) : nullptr;
+                        if (!next) return nullptr;
+                        val = next;
                     } else {
                         const proto::ProtoObject* keyObj =
                             PythonEnvironment::newStr(context, keyText);
-                        const proto::ProtoObject* getitemM = env
-                            ? env->getAttribute(context, val,
-                                PythonEnvironment::getInternedString(context, "__getitem__"), false)
-                            : nullptr;
-                        if (getitemM && getitemM->asMethod(context)) {
-                            const proto::ProtoList* ga = context->newList()->appendLast(context, keyObj);
-                            const proto::ProtoObject* next = getitemM->asMethod(context)(
-                                context, val, nullptr, argsView(proto::ProtoListArguments(context, ga)), nullptr);
-                            val = next ? next : PROTO_NONE;
-                        }
+                        const proto::ProtoObject* next = env ? env->getItem(val, keyObj) : nullptr;
+                        if (!next) return nullptr;
+                        val = next;
                     }
                 }
                 ti = (end < tail.size()) ? end + 1 : tail.size();
@@ -15368,14 +15425,20 @@ static const proto::ProtoObject* py_str_format(
             return true;
         };
         // Apply conversion
-        if (conversion == 'r') {
-            const std::string s = PythonEnvironment::reprObject(context, val);
+        if (conversion && conversion != 'r' && conversion != 's' && conversion != 'a') {
+            if (env) env->raiseValueError(context, PythonEnvironment::newStr(context,
+                std::string("Unknown conversion specifier ") + conversion));
+            return nullptr;
+        }
+        if (conversion == 'r' || conversion == 'a') {
+            std::string s = PythonEnvironment::reprObject(context, val);
+            if (conversion == 'a') s = PythonEnvironment::asciiEscape(s);
             if (!appendStringFormatted(s)) return nullptr;
         } else if (conversion == 's') {
             // !s applies str(), which for str returns the bare content
             // (no quotes).  reprObject would re-quote it.
             std::string s;
-            if (val && val->isString(context)) {
+            if (val && proto::ProtoObject::isStringTagFast(val)) {
                 val->asString(context)->toUTF8String(context, s);
             } else {
                 // str(val), which honours a __str__ written in Python.
@@ -15385,50 +15448,18 @@ static const proto::ProtoObject* py_str_format(
             }
             if (!appendStringFormatted(s)) return nullptr;
         } else {
-            // format(val, spec): a value other than str / int / float / bool /
-            // None goes through its own __format__ (object.__format__ is
-            // str(val)); applyFormatSpec rendered repr() for it.
-            bool formatted = false;
-            if (env && val && val != PROTO_NONE && val != PROTO_TRUE && val != PROTO_FALSE
-                && !val->isString(context) && !val->isInteger(context) && !val->isDouble(context)) {
-                const proto::ProtoObject* formatFn = env->getBuiltins()
-                    ? env->getBuiltins()->getAttribute(context, PythonEnvironment::getInternedString(context, "format"))
-                    : nullptr;
-                if (formatFn && formatFn != PROTO_NONE) {
-                    const proto::ProtoObject* specObj = PythonEnvironment::newStr(context, formatSpec);
-                    const proto::ProtoObject* r = env->callObject(formatFn, {val, specObj});
-                    if (r && r->isString(context)) {
-                        std::string rs;
-                        r->asString(context)->toUTF8String(context, rs);
-                        out += rs;
-                        formatted = true;
-                    }
-                }
-            }
-            if (!formatted && val && (val->isInteger(context) || val == PROTO_TRUE || val == PROTO_FALSE)) {
-                // int.__format__ itself: exact at any size.
-                const proto::ProtoObject* r = PythonEnvironment::formatIntObject(context, val, formatSpec);
-                if (!r) return nullptr;
+            // format(val, spec): the built-in formatter for an exact int /
+            // bool / float / str, type(val).__format__ for anything else (a
+            // subclass override included).
+            if (val && formatExactToText(context, val, formatSpec, out)) continue;
+            const proto::ProtoObject* r = PythonEnvironment::formatObject(context, val,
+                formatSpec.empty() ? nullptr : PythonEnvironment::newStr(context, formatSpec));
+            if (!r) return nullptr;
+            if (const proto::ProtoString* rd = str_from_self(context, r)) {
                 std::string rs;
-                r->asString(context)->toUTF8String(context, rs);
+                rd->toUTF8String(context, rs);
                 out += rs;
-                formatted = true;
             }
-            if (!formatted && val && val->isDouble(context)) {
-                const proto::ProtoObject* r = PythonEnvironment::formatFloatObject(context, val->asDouble(context), formatSpec);
-                if (!r) return nullptr;
-                std::string rs;
-                r->asString(context)->toUTF8String(context, rs);
-                out += rs;
-                formatted = true;
-            }
-            if (!formatted && val && val->isString(context)) {
-                std::string text;
-                val->asString(context)->toUTF8String(context, text);
-                if (!appendStringFormatted(text)) return nullptr;
-                formatted = true;
-            }
-            if (!formatted) out += applyFormatSpec(context, val, formatSpec);
         }
     }
     return PythonEnvironment::newStr(context, out);
@@ -15457,6 +15488,37 @@ static const proto::ProtoObject* py_str_format_map(
     const proto::ProtoList* noArgs = context->newList();
     return py_str_format(context, self, parentLink,
         argsView(proto::ProtoListArguments(context, noArgs)), nullptr);
+}
+
+// Helpers of the % operator.
+static bool isFloatOperand(proto::ProtoContext* context, const proto::ProtoObject* x) {
+    if (!x || x == PROTO_NONE) return false;
+    if (x->isDouble(context)) return true;
+    if (proto::isSmallInt(x) || x->isString(context)) return false;
+    const proto::ProtoObject* d = x->getAttribute(context, PythonEnvironment::getInternalString(context, "\001__data__"));
+    return d && d->isDouble(context);
+}
+static size_t codePointCountUtf8(const std::string& s) {
+    size_t n = 0;
+    for (unsigned char c : s) if ((c & 0xC0) != 0x80) ++n;
+    return n;
+}
+static void appendUtf8CodePoint(std::string& out, unsigned cp) {
+    if (cp < 0x80) {
+        out += static_cast<char>(cp);
+    } else if (cp < 0x800) {
+        out += static_cast<char>(0xC0 | (cp >> 6));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+        out += static_cast<char>(0xE0 | (cp >> 12));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+        out += static_cast<char>(0xF0 | (cp >> 18));
+        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    }
 }
 
 // str.__mod__(other): implements "format_string % args"
@@ -15532,43 +15594,36 @@ static const proto::ProtoObject* py_str_mod(
         }
         return 0.0;
     };
-    // Numeric arg validation for %d/%i/%u/%o/%x/%X: CPython raises
-    //   TypeError: %d format: a number is required, not <type>
-    // when the arg is not int / float / bool / wrapped-numeric.  Previously
-    // extractLong silently returned 0 for str / list / None, masking
-    // misuse like `'%d' % 'a'`.
-    auto requireNumeric = [&](char spec, const proto::ProtoObject* x) -> bool {
-        bool isNum = false;
-        if (x && x != PROTO_NONE) {
-            if (x->isInteger(context) || x->isFloat(context) || x->isBoolean(context)) {
-                isNum = true;
-            } else {
-                const proto::ProtoString* dataS = env ? env->getDataString()
-                    : PythonEnvironment::getInternalString(context, "\001__data__");
-                const proto::ProtoObject* d = x->getAttribute(context, dataS);
-                if (d && d != PROTO_NONE && (d->isInteger(context) || d->isFloat(context))) {
-                    isNum = true;
-                }
-            }
-        }
-        if (!isNum) {
-            if (env) {
-                std::string clsName = "NoneType";
-                if (x && x != PROTO_NONE) {
-                    const proto::ProtoObject* cls = env->getType(context, x);
-                    if (cls) {
-                        const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
-                        if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
-                    }
-                }
-                env->raiseTypeError(context,
-                    std::string("%") + spec + " format: a number is required, not " + clsName);
-            }
-            return false;
-        }
-        return true;
+    // The number protocol of an operand that is not an int or a float
+    // (CPython's PyNumber_Index / PyNumber_Long / PyFloat_AsDouble): the
+    // type's __index__, __int__ and __float__ (Decimal, Fraction, numpy-like
+    // scalars).
+    auto typeDefines = [&](const proto::ProtoObject* x, const char* dunder) -> bool {
+        if (!env || !x || x == PROTO_NONE || x->isString(context)) return false;
+        const proto::ProtoObject* cls = env->getType(context, x);
+        const proto::ProtoObject* m = cls ? env->getAttribute(context, cls,
+            PythonEnvironment::getInternedString(context, dunder), false) : nullptr;
+        return m && m != PROTO_NONE;
     };
-
+    auto qualTypeName = [&](const proto::ProtoObject* x) -> std::string {
+        if (!x || x == PROTO_NONE) return "NoneType";
+        std::string name = PythonEnvironment::typeNameOf(context, x);
+        if (env) {
+            const proto::ProtoObject* cls = env->getType(context, x);
+            const proto::ProtoObject* mod = cls ? env->getAttribute(context, cls,
+                PythonEnvironment::getInternedString(context, "__module__"), false) : nullptr;
+            std::string m;
+            if (mod && mod->isString(context)) mod->asString(context)->toUTF8String(context, m);
+            if (!m.empty() && m != "builtins" && m != "__main__") name = m + "." + name;
+        }
+        return name;
+    };
+    auto asIndex = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+        const proto::ProtoObject* r = env->callMethod(x, "__index__", {});
+        const proto::ProtoObject* iv = r ? intOperandValue(context, r) : nullptr;
+        if (r && !iv) env->raiseTypeError(context, "__index__ returned non-int (type " + PythonEnvironment::typeNameOf(context, r) + ")");
+        return iv;
+    };
 
     std::string out;
     for (size_t i = 0; i < fmt.size(); ++i) {
@@ -15677,7 +15732,10 @@ static const proto::ProtoObject* py_str_mod(
         }
         char spec = fmt[i];
 
-        if (spec == '%') {
+        // '%%' is a literal '%'. With a key, flags, width or precision in
+        // between, CPython 3.14 treats it as a conversion: it takes an
+        // argument, then rejects the character (the default case below).
+        if (spec == '%' && fmt[i - 1] == '%') {
             out += '%';
             continue;
         }
@@ -15794,9 +15852,26 @@ static const proto::ProtoObject* py_str_mod(
             case 'o':
             case 'x':
             case 'X': {
-                if (!requireNumeric(spec, arg)) return nullptr;
                 // Exact at any size: the digits come from the int itself.
                 const proto::ProtoObject* iv = intOperandValue(context, arg);
+                if (!iv && arg && !arg->isDouble(context) && !(env && isFloatOperand(context, arg))) {
+                    if (spec == 'o' || spec == 'x' || spec == 'X') {
+                        if (!typeDefines(arg, "__index__")) {
+                            if (env) env->raiseTypeError(context, std::string("%") + spec +
+                                " format: an integer is required, not " + qualTypeName(arg));
+                            return nullptr;
+                        }
+                        iv = asIndex(arg);
+                    } else if (typeDefines(arg, "__index__") || typeDefines(arg, "__int__")) {
+                        const proto::ProtoObject* r = env->callObject(env->getIntPrototype(), {arg});
+                        iv = r ? intOperandValue(context, r) : nullptr;
+                    } else {
+                        if (env) env->raiseTypeError(context, std::string("%") + spec +
+                            " format: a real number is required, not " + qualTypeName(arg));
+                        return nullptr;
+                    }
+                    if (!iv) return nullptr;
+                }
                 if (!iv) {
                     // A float: %d %i %u truncate it (int(x)); %o %x %X refuse it.
                     if (spec == 'o' || spec == 'x' || spec == 'X') {
@@ -15841,41 +15916,76 @@ static const proto::ProtoObject* py_str_mod(
                 break;
             }
             case 'f': case 'F': case 'e': case 'E': case 'g': case 'G': {
-                if (!requireNumeric(spec, arg)) return nullptr;
-                const double v = extractDouble(arg);
+                double v = 0.0;
+                if (arg && (arg->isInteger(context) || arg->isDouble(context) || arg == PROTO_TRUE ||
+                            arg == PROTO_FALSE || intOperandValue(context, arg) ||
+                            (env && isFloatOperand(context, arg)))) {
+                    v = extractDouble(arg);
+                } else if (typeDefines(arg, "__float__") || typeDefines(arg, "__index__")) {
+                    const proto::ProtoObject* fv = env->callObject(env->getFloatPrototype(), {arg});
+                    if (!fv) return nullptr;
+                    v = extractDouble(fv);
+                } else {
+                    if (env) env->raiseTypeError(context, "must be real number, not " + qualTypeName(arg));
+                    return nullptr;
+                }
                 const int width = fmtWidth.empty() ? -1 : std::atoi(fmtWidth.c_str());
                 const int precision = fmtPrec.empty() ? -1 : std::atoi(fmtPrec.c_str() + 1);
                 out += protoPython::numfmt::percentFloat(v, fmtFlags, width, precision, spec);
                 break;
             }
             case 'c': {
-                // CPython: %c accepts an int 0..0x10FFFF or a single
-                // character string.  Anything else (None, list, etc.)
-                // raises TypeError: %c requires int or char.  Previously
-                // the non-string branch fell through to asLong on
-                // PROTO_NONE / list / etc. and crashed with the
-                // internal "Object is not an integer type" RuntimeError.
+                // A one-character str, or an int (or __index__ object) in
+                // range(0x110000); the width and '-' flag apply.
+                std::string ch;
                 if (arg && arg->isString(context)) {
                     std::string s;
                     arg->asString(context)->toUTF8String(context, s);
-                    if (!s.empty()) out += s[0];
-                } else if (arg && arg != PROTO_NONE
-                           && (arg->isInteger(context) || arg->isBoolean(context))) {
-                    long long v = arg->isInteger(context)
-                        ? arg->asLong(context)
-                        : (arg == PROTO_TRUE ? 1LL : 0LL);
-                    out += static_cast<char>(v & 0xFF);
+                    const size_t n = codePointCountUtf8(s);
+                    if (n != 1) {
+                        if (env) env->raiseTypeError(context,
+                            "%c requires an int or a unicode character, not a string of length " + std::to_string(n));
+                        return nullptr;
+                    }
+                    ch = s;
                 } else {
-                    if (env) env->raiseTypeError(context,
-                        "%c requires int or char");
-                    return nullptr;
+                    const proto::ProtoObject* iv = intOperandValue(context, arg);
+                    if (!iv && typeDefines(arg, "__index__")) {
+                        iv = asIndex(arg);
+                        if (!iv) return nullptr;
+                    }
+                    if (!iv) {
+                        if (env) env->raiseTypeError(context,
+                            "%c requires an int or a unicode character, not " + qualTypeName(arg));
+                        return nullptr;
+                    }
+                    const bool small = proto::isSmallInt(iv);
+                    const long long cp = small ? iv->asLong(context) : -1;
+                    if (!small || cp < 0 || cp >= 0x110000) {
+                        if (env) env->raiseOverflowError(context, "%c arg not in range(0x110000)");
+                        return nullptr;
+                    }
+                    appendUtf8CodePoint(ch, static_cast<unsigned>(cp));
                 }
+                fmtPrec.clear();
+                appendPercentText(ch);
                 break;
             }
-            default:
-                out += '%';
-                out += spec;
+            case 'a': {
+                appendPercentText(PythonEnvironment::asciiEscape(PythonEnvironment::reprObject(context, arg)));
                 break;
+            }
+            default: {
+                // The index counts code points, as CPython's does.
+                if (env) {
+                    char hexbuf[16];
+                    std::snprintf(hexbuf, sizeof hexbuf, "%x", static_cast<unsigned>(static_cast<unsigned char>(spec)));
+                    env->raiseValueError(context, PythonEnvironment::newStr(context,
+                        std::string("unsupported format character '") + spec + "' (0x" + hexbuf + ") at index " +
+                        std::to_string(codePointCountUtf8(fmt.substr(0, i)))));
+                }
+                return nullptr;
+            }
         }
     }
     // CPython: `'%s' % (1, 2)` — too many args raised
@@ -17609,7 +17719,7 @@ static const proto::ProtoObject* getOrBuildDictView(
     const proto::ProtoString* protoKey = PythonEnvironment::getInternedString(context, (std::string("\001__") + viewName + "_proto__").c_str());
     const proto::ProtoObject* dictProto = env->getDictPrototype();
     if (!dictProto) return nullptr;
-    const proto::ProtoObject* cached = dictProto->getAttribute(context, protoKey);
+    const proto::ProtoObject* cached = dictProto->getAttribute(context, protoKey);  // raw-key: an internal key built from a C++ name
     if (cached && cached != PROTO_NONE) return cached;
     // Build the prototype: a new class object whose __name__ is the
     // view name, parent objectPrototype.  Wire __iter__ to the list
@@ -18761,7 +18871,7 @@ static const proto::ProtoObject* py_dict_update(
                     dictStore(context, dict, keys, k, v);
                     bool isModule = target->isInstanceOf(context, env->getModulePrototype()) == PROTO_TRUE;
                     if (k->isString(context) && isModule) {
-                        env->setAttribute(context, target, k->asString(context), v);
+                        env->setAttribute(context, target, PythonEnvironment::pythonAttributeKey(context, k->asString(context)), v);
                     }
                 }
             }
@@ -21045,7 +21155,7 @@ static const proto::ProtoObject* py_slot_member_get(
     const proto::ProtoObject* nameAttr = self->getAttribute(context,
         PythonEnvironment::getInternedString(context, "__name__"));
     if (!nameAttr || !nameAttr->isString(context)) return PROTO_NONE;
-    const proto::ProtoString* nameS = nameAttr->asString(context);
+    const proto::ProtoString* nameS = PythonEnvironment::pythonAttributeKey(context, nameAttr->asString(context));
     if (instance->hasOwnAttribute(context, nameS) == PROTO_TRUE) {
         return instance->getOwnAttributeDirect(context, nameS);
     }
@@ -21079,7 +21189,7 @@ static const proto::ProtoObject* py_slot_member_set(
     const proto::ProtoObject* nameAttr = self->getAttribute(context,
         PythonEnvironment::getInternedString(context, "__name__"));
     if (!nameAttr || !nameAttr->isString(context)) return PROTO_NONE;
-    const proto::ProtoString* nameS = nameAttr->asString(context);
+    const proto::ProtoString* nameS = PythonEnvironment::pythonAttributeKey(context, nameAttr->asString(context));
     const_cast<proto::ProtoObject*>(instance)->proto::ProtoObject::setAttribute(
         context, nameS, value);
     return PROTO_NONE;
@@ -21105,7 +21215,7 @@ static const proto::ProtoObject* py_slot_member_delete(
     const proto::ProtoObject* nameAttr = self->getAttribute(context,
         PythonEnvironment::getInternedString(context, "__name__"));
     if (!nameAttr || !nameAttr->isString(context)) return PROTO_NONE;
-    const proto::ProtoString* nameS = nameAttr->asString(context);
+    const proto::ProtoString* nameS = PythonEnvironment::pythonAttributeKey(context, nameAttr->asString(context));
     if (instance->hasOwnAttribute(context, nameS) != PROTO_TRUE) {
         std::string nm; nameS->toUTF8String(context, nm);
         env->raiseAttributeError(context, instance, nm);
@@ -21133,7 +21243,7 @@ static const proto::ProtoObject* py_code_member_get(
     if (!instance || instance == PROTO_NONE) return self;
     const proto::ProtoObject* nameAttr = self->getAttribute(context, env->getNameString());
     if (!nameAttr || !nameAttr->isString(context)) return PROTO_NONE;
-    const proto::ProtoString* nameS = nameAttr->asString(context);
+    const proto::ProtoString* nameS = PythonEnvironment::pythonAttributeKey(context, nameAttr->asString(context));
     if (instance->hasOwnAttribute(context, nameS) == PROTO_TRUE)
         return instance->getOwnAttributeDirect(context, nameS);
     std::string nm; nameS->toUTF8String(context, nm);
@@ -21722,7 +21832,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                         }
                     }
                     const proto::ProtoString* slotKey =
-                        PythonEnvironment::getInternedString(ctx, lookupName.c_str());
+                        PythonEnvironment::pythonAttributeKey(ctx, lookupName);
                     if (!slotKey) return;
                     if (obj->hasOwnAttribute(ctx, slotKey) != PROTO_TRUE) return;
                     const proto::ProtoObject* v = obj->getOwnAttributeDirect(ctx, slotKey);
@@ -21782,13 +21892,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                         // _Cls prefix); for the typical test_issue24097
                         // shape, 'spam' is read via __getattr__.
                         if (obj->hasOwnAttribute(ctx,
-                                PythonEnvironment::getInternedString(ctx, sn.c_str())) != PROTO_TRUE) {
+                                PythonEnvironment::pythonAttributeKey(ctx, sn)) != PROTO_TRUE) {
                             // Trigger __getattr__ by env->getAttribute first.
                             // If miss, fall back to invoking __getattr__
                             // explicitly (the standard get/raise → __getattr__
                             // pipeline isn't auto-triggered by env->getAttribute).
                             const proto::ProtoString* attrK =
-                                PythonEnvironment::getInternedString(ctx, sn.c_str());
+                                PythonEnvironment::pythonAttributeKey(ctx, sn);
                             const proto::ProtoObject* v = nullptr;
                             try {
                                 v = env->getAttribute(ctx, obj, attrK, false);
@@ -22530,7 +22640,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             descr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fget"), rootContext_->fromMethod(nullptr, g.fget));
             descr->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, g.name)->asObject(rootContext_));
             descr->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__objclass__"), framePrototype);
-            framePrototype = framePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, g.name), descr);
+            framePrototype = framePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, g.name), descr);  // raw-key: a name from a C++ table
         }
     }
     // Q-75: __mro__ for frame.
@@ -22709,7 +22819,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             const proto::ProtoObject* func = method->hasOwnAttribute(ctx, funcS) == PROTO_TRUE
                 ? method->getOwnAttributeDirect(ctx, funcS) : nullptr;
             const proto::ProtoObject* v = (func && func != PROTO_NONE && func != method)
-                ? env->getAttribute(ctx, func, PythonEnvironment::getInternedString(ctx, name.c_str()), false)
+                ? env->getAttribute(ctx, func, PythonEnvironment::pythonAttributeKey(ctx, name), false)
                 : nullptr;
             if (v) return v;
             // CPython's message names the function, where the lookup ended.
@@ -23474,7 +23584,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             else m = +[](proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*,
                          const proto::ProtoArguments* a, const proto::ProtoKeywordArguments*) -> const proto::ProtoObject* {
                 return reflectComplex(c, s, a, "__pow__"); };
-            complexPrototype = complexPrototype->setAttribute(rootContext_,
+            complexPrototype = complexPrototype->setAttribute(rootContext_,  // raw-key: a name from a C++ table
                 PythonEnvironment::getInternedString(rootContext_, r.name), rootContext_->fromMethod(nullptr, m));
         }
     }
@@ -24541,7 +24651,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             double d = 0.0;
             if (self && self->isDouble(ctx)) d = self->asDouble(ctx);
             else return PROTO_NONE;
-            return ctx->fromInteger(static_cast<long long>(std::floor(d)));
+            return PythonEnvironment::integralDoubleToInt(ctx, std::floor(d));
         }));
     floatPrototype = floatPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "__ceil__"),
@@ -24552,7 +24662,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             double d = 0.0;
             if (self && self->isDouble(ctx)) d = self->asDouble(ctx);
             else return PROTO_NONE;
-            return ctx->fromInteger(static_cast<long long>(std::ceil(d)));
+            return PythonEnvironment::integralDoubleToInt(ctx, std::ceil(d));
         }));
     floatPrototype = floatPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "__trunc__"),
@@ -24563,7 +24673,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             double d = 0.0;
             if (self && self->isDouble(ctx)) d = self->asDouble(ctx);
             else return PROTO_NONE;
-            return ctx->fromInteger(static_cast<long long>(d));
+            return PythonEnvironment::integralDoubleToInt(ctx, std::trunc(d));
         }));
     // float.__lt__/__le__/__gt__/__ge__/__eq__/__ne__: missing on the
     // prototype, so direct dunder calls (e.g. `(100.0).__eq__(3.0)` or
@@ -24592,7 +24702,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         if (!args || args->getSize(ctx) < 1) return false;
         auto toDouble = [&](const proto::ProtoObject* x, double& out) -> bool {
             if (!x || x == PROTO_NONE) return false;
-            if (x->isInteger(ctx)) { out = (double)x->asLong(ctx); return true; }
+            // An int converts exactly rounded; OverflowError past the range.
+            if (x->isInteger(ctx)) { out = PythonEnvironment::intToDouble(ctx, x); return true; }
             if (x->isFloat(ctx)) { out = x->asDouble(ctx); return true; }
             if (x->isBoolean(ctx)) { out = (x == PROTO_TRUE) ? 1.0 : 0.0; return true; }
             return false;
@@ -24732,7 +24843,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 return env ? env->getNotImplementedPrototype() : PROTO_NONE;
             }
-            return ctx->fromDouble(std::pow(a, b));
+            return PythonEnvironment::floatPow(ctx, a, b);
         }));
     floatPrototype = floatPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "__floordiv__"),
@@ -25904,8 +26015,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             };
             for (const auto& name : osErrors) {
                 const proto::ProtoString* nameS = PythonEnvironment::getInternedString(rootContext_, name.c_str());
-                const proto::ProtoObject* excType = exceptionsModule->getAttribute(rootContext_, nameS);
-                if (excType && excType != PROTO_NONE)
+                const proto::ProtoObject* excType = exceptionsModule->getAttribute(rootContext_, nameS);  // raw-key: a name from a C++ table
+                if (excType && excType != PROTO_NONE)  // raw-key: a name from a C++ table
                     builtinsModule = builtinsModule->setAttribute(rootContext_, nameS, excType);
             }
         }
@@ -25940,7 +26051,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         };
         for (const auto& pair : excMap) {
             if (*pair.second) {
-                builtinsModule = builtinsModule->setAttribute(rootContext_,
+                builtinsModule = builtinsModule->setAttribute(rootContext_,  // raw-key: a name from a C++ table
                     PythonEnvironment::getInternedString(rootContext_, pair.first.c_str()),
                     *pair.second);
             }
@@ -25960,9 +26071,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             "BaseExceptionGroup", "ExceptionGroup",
         };
         for (const auto& excName : additionalExceptions) {
-            const proto::ProtoObject* excType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, excName.c_str()));
+            const proto::ProtoObject* excType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, excName.c_str()));  // raw-key: a name from a C++ table
             if (excType && excType != PROTO_NONE) {
-                builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, excName.c_str()), excType);
+                builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, excName.c_str()), excType);  // raw-key: a name from a C++ table
             }
         }
     }
@@ -26637,9 +26748,9 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                 std::string sKeyStr = sKey->toStdString(ctx);
                 if (get_env_diag()) fprintf(stderr, "DEBUG: executeModule %s - checking attr '%s'\n", moduleName.c_str(), sKeyStr.c_str());
                 // Don't overwrite if we already set it (like __name__)
-                if (mutableModObj->getAttribute(ctx, sKey) == PROTO_NONE) {
+                if (mutableModObj->getAttribute(ctx, sKey) == PROTO_NONE) {  // raw-key: a stored key copied as it is
                     if (get_env_diag()) fprintf(stderr, "DEBUG: executeModule %s - copying attr '%s'\n", moduleName.c_str(), sKeyStr.c_str());
-                    mutableModObj = const_cast<proto::ProtoObject*>(mutableModObj->setAttribute(ctx, sKey, mod->getAttribute(ctx, sKey)));
+                    mutableModObj = const_cast<proto::ProtoObject*>(mutableModObj->setAttribute(ctx, sKey, mod->getAttribute(ctx, sKey)));  // raw-key: a stored key copied as it is
                 }
             }
             it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
@@ -26684,7 +26795,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                 PythonEnvironment::getInternedString(ctx, moduleName.substr(0, lastDot).c_str())->asObject(ctx));
             if (parentMod && parentMod != PROTO_NONE) {
                 const_cast<proto::ProtoObject*>(parentMod)->setAttribute(ctx,
-                    PythonEnvironment::getInternedString(ctx, moduleName.substr(lastDot + 1).c_str()), ns);
+                    PythonEnvironment::pythonAttributeKey(ctx, moduleName.substr(lastDot + 1)), ns);
             }
         }
         mod = ns;
@@ -26808,7 +26919,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                 if (mods && mods != PROTO_NONE) {
                                     const proto::ProtoString* modNameS = PythonEnvironment::getInternedString(ctx, moduleName.c_str());
                                     // 1. Set as attribute (internal lookup fallback)
-                                    mods->setAttribute(ctx, modNameS, mutableMod);
+                                    mods->setAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, modNameS), mutableMod);
 
                                     // 2. Set as dict item (Python-side lookup)
                                     const proto::ProtoObject* dataAttr = mods->getAttribute(ctx, getDataString());
@@ -26852,7 +26963,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                             parentMod = dictDataGet(ctx, dict, parentNameS->asObject(ctx));
                                         }
                                         if (!parentMod || parentMod == PROTO_NONE) {
-                                            parentMod = mods->getAttribute(ctx, parentNameS);
+                                            parentMod = mods->getAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, parentNameS));
                                         }
                                         // Also check the thread-local resolve cache: the parent package
                                         // may be registered there before it is placed in sys.modules
@@ -26899,7 +27010,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                         const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
                                         if (kObj && kObj->isString(ctx)) {
                                             const proto::ProtoString* sKey = kObj->asString(ctx);
-                                            const_cast<proto::ProtoObject*>(mutableMod)->setAttribute(ctx, sKey, framePtr->getAttribute(ctx, sKey));
+                                            const_cast<proto::ProtoObject*>(mutableMod)->setAttribute(ctx, sKey, framePtr->getAttribute(ctx, sKey));  // raw-key: a stored key copied as it is
                                         }
                                         it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
                                     }
@@ -31376,8 +31487,27 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         const proto::ProtoObject* srcDataObj = value->getAttribute(ctx, dataS);
         const proto::ProtoList* srcKeys = srcKeysObj ? ::protoPython::listStorage(ctx, srcKeysObj) : nullptr;
         const proto::ProtoSparseList* srcData = srcDataObj ? srcDataObj->asSparseList(ctx) : nullptr;
-        // Reset obj's storage to fresh empty containers, then refill.
+        // Reset obj's storage to fresh empty containers, then refill. The
+        // attributes of the old namespace go too (they stayed readable).
         proto::ProtoObject* mobj = const_cast<proto::ProtoObject*>(obj);
+        {
+            struct Collect {
+                std::vector<const proto::ProtoString*> names;
+                bool function;
+            } col{{}, isPlainFunction(ctx, this, obj)};
+            obj->processOwnAttributes(ctx, &col,
+                +[](proto::ProtoContext* c, void* ud, const proto::ProtoString* ks, const proto::ProtoObject*) {
+                    Collect* cl = static_cast<Collect*>(ud);
+                    if (!ks) return;
+                    const bool escaped = PythonEnvironment::isInternalKey(c, ks);
+                    std::string nm;
+                    (escaped ? PythonEnvironment::pythonAttributeName(c, ks) : ks)->toUTF8String(c, nm);
+                    if (!escaped && PythonEnvironment::isInternalKeySpelling(nm)) return;
+                    if (nm == "__class__" || (cl->function && !escaped && isFunctionSlotName(nm))) return;
+                    cl->names.push_back(ks);
+                });
+            for (const proto::ProtoString* ks : col.names) mobj->removeAttribute(ctx, ks);
+        }
         mobj->setAttribute(ctx, dataS, ctx->newSparseList()->asObject(ctx));
         mobj->setAttribute(ctx, keysS, ctx->newList()->asObject(ctx));
         if (srcKeys && srcData) {
@@ -31885,7 +32015,8 @@ const proto::ProtoObject* PythonEnvironment::lookupGlobalName(const proto::Proto
     if (s_currentGlobals) {
         if (s_currentGlobals->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
             const proto::ProtoObject* global = s_currentGlobals->getAttribute(ctx, nameObj);
-            if (!isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)) return global;
+            if (!isInheritedModuleName(ctx, s_currentGlobals, nameObj, global)
+                && !isDictNamespaceTypeAttribute(ctx, s_currentGlobals, nameObj)) return global;
         }
 
         // Support dictionary-based globals (e.g. from eval/exec namespace)
@@ -32066,6 +32197,13 @@ const proto::ProtoObject* PythonEnvironment::resolveGlobalName(const proto::Prot
     const proto::ProtoObject* result = lookupGlobalName(nameObj, ctx);
     s_nameCache[reinterpret_cast<uintptr_t>(nameObj)] = result;
     return result;
+}
+
+bool PythonEnvironment::isDictNamespaceTypeAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* ns,
+                                                     const proto::ProtoString* name) {
+    if (!dictPrototype || !ns || !name) return false;
+    if (ns->hasOwnAttribute(ctx, name) == PROTO_TRUE) return false;
+    return getType(ctx, ns) == dictPrototype;
 }
 
 bool PythonEnvironment::isInheritedModuleName(proto::ProtoContext* ctx, const proto::ProtoObject* ns,
@@ -32258,7 +32396,7 @@ void PythonEnvironment::registerInSysModules(proto::ProtoContext* ctx, const pro
         if (dataAttr && dataAttr != PROTO_NONE) {
             sysModulesStore(ctx, modules, nameObj, mod);
         } else {
-            const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, nameObj, mod);
+            const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, nameObj), mod);
         }
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG: registerInSysModules %s -> %p\n", name.c_str(), (void*)mod);
@@ -32422,7 +32560,7 @@ const proto::ProtoObject* PythonEnvironment::importForeignModule(proto::ProtoCon
         if (!parent) parent = importForeignNamespace(ctx, parentName);
         if (parent) {
             const_cast<proto::ProtoObject*>(parent)->setAttribute(
-                ctx, getInternedString(ctx, name.substr(dot + 1).c_str()), proxy);
+                ctx, pythonAttributeKey(ctx, name.substr(dot + 1)), proxy);
         }
     }
     return proxy;
@@ -32442,7 +32580,7 @@ const proto::ProtoObject* PythonEnvironment::importForeignNamespace(proto::Proto
         const proto::ProtoObject* parent = sysModuleEntry(ctx, parentName);
         if (!parent) parent = importForeignNamespace(ctx, parentName);
         const_cast<proto::ProtoObject*>(parent)->setAttribute(
-            ctx, getInternedString(ctx, name.substr(dot + 1).c_str()), ns);
+            ctx, pythonAttributeKey(ctx, name.substr(dot + 1)), ns);
     }
     return ns;
 }
@@ -33096,9 +33234,13 @@ const proto::ProtoObject* PythonEnvironment::binaryOp(const proto::ProtoObject* 
             case TokenType::Star: return a->multiply(ctx, b);
             default: break;
         }
-    } else if (a->isDouble(ctx) || b->isDouble(ctx)) {
-        double av = a->isDouble(ctx) ? a->asDouble(ctx) : (double)a->asLong(ctx);
-        double bv = b->isDouble(ctx) ? b->asDouble(ctx) : (double)b->asLong(ctx);
+    } else if ((a->isDouble(ctx) || a->isInteger(ctx)) && (b->isDouble(ctx) || b->isInteger(ctx))) {
+        // An int operand converts exactly rounded (OverflowError past the range).
+        double av = 0.0, bv = 0.0;
+        if (a->isDouble(ctx)) av = a->asDouble(ctx);
+        else if (!intToDouble(ctx, a, av)) return nullptr;
+        if (b->isDouble(ctx)) bv = b->asDouble(ctx);
+        else if (!intToDouble(ctx, b, bv)) return nullptr;
         switch (op) {
             case TokenType::Plus: return ctx->fromDouble(av + bv);
             case TokenType::Minus: return ctx->fromDouble(av - bv);
@@ -33156,7 +33298,7 @@ const proto::ProtoObject* PythonEnvironment::lookupName(const std::string& name)
     const proto::ProtoObject* frame = getCurrentFrame();
     const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, name.c_str());
     if (frame) {
-        const proto::ProtoObject* val = frame->getAttribute(ctx, nameS);
+        const proto::ProtoObject* val = frame->getAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, nameS));
         if (val && val != PROTO_NONE) return val;
     }
     const proto::ProtoObject* result = resolve(name, ctx);
@@ -33167,56 +33309,41 @@ const proto::ProtoObject* PythonEnvironment::lookupName(const std::string& name)
 }
 
 const proto::ProtoObject* PythonEnvironment::buildString(const proto::ProtoObject** parts, size_t count) {
+    // Joins the parts of an f-string. The compiler formats every replacement
+    // field first (OP_FORMAT_VALUE), so the parts are str objects; any other
+    // part (an embedder's call) is converted as a spec-less field is,
+    // format(part, '').
     proto::ProtoContext* ctx = getCurrentContext();
     if (!ctx) ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
-    std::string result;
+    // f'{x}' is its one formatted part, already a new str.
+    if (count == 1 && parts[0] && proto::ProtoObject::isStringTagFast(parts[0])) return parts[0];
+    std::string result, s;
     result.reserve(count * 16);
     for (size_t i = 0; i < count; ++i) {
-        const proto::ProtoObject* obj = parts[i];
-        if (!obj || obj == PROTO_NONE) {
-            result += "None";
-        } else if (obj->isString(ctx)) {
-            std::string s; obj->asString(ctx)->toUTF8String(ctx, s);
+        const proto::ProtoObject* obj = parts[i] ? parts[i] : PROTO_NONE;
+        // Plain fields left unformatted by FORMAT_VALUE (exact, immutable
+        // values): their format(x, '') written in place.
+        if (proto::isSmallInt(obj)) {
+            char buf[24];
+            const auto r = std::to_chars(buf, buf + sizeof buf, static_cast<long long>(proto::asSmallInt(obj)));
+            result.append(buf, r.ptr);
+            continue;
+        }
+        if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
+            result += obj == PROTO_TRUE ? "True" : "False";
+            continue;
+        }
+        if (obj->isDouble(ctx)) {
+            result += protoPython::numfmt::floatRepr(obj->asDouble(ctx));
+            continue;
+        }
+        if (!proto::ProtoObject::isStringTagFast(obj)) {
+            obj = formatObject(ctx, obj, nullptr);
+            if (!obj) return nullptr;
+        }
+        if (const proto::ProtoString* d = str_from_self(ctx, obj)) {
+            d->toUTF8String(ctx, s);
             result += s;
-        } else if (obj->isInteger(ctx)) {
-            // STRUCT-290: bignum-safe int → string conversion.
-            // asLong raises protoCore's Overflow error for values outside
-            // long long range; fall back to Integer::asIntegerString
-            // which renders the bignum without converting through
-            // long long.  Affects f-string concatenation of bignum
-            // values like `f"{9876543210**2}"`.
-            try {
-                result += std::to_string(obj->asLong(ctx));
-            } catch (const proto::ProtoException& overflow) {
-                PythonEnvironment::rethrowUnlessOverflow(ctx, overflow);
-                const proto::ProtoString* s = obj->asIntegerString(ctx, 10);
-                if (s) {
-                    std::string str;
-                    s->toUTF8String(ctx, str);
-                    result += str;
-                } else {
-                    result += "<int>";
-                }
-            }
-        } else if (obj->isDouble(ctx)) {
-            result += std::to_string(obj->asDouble(ctx));
-        } else if (obj == PROTO_TRUE) {
-            result += "True";
-        } else if (obj == PROTO_FALSE) {
-            result += "False";
-        } else {
-            const proto::ProtoObject* strFunc = resolve("str", ctx);
-            if (strFunc) {
-                const proto::ProtoObject* sObj = callObject(strFunc, {obj});
-                if (sObj && sObj->isString(ctx)) {
-                    std::string s; sObj->asString(ctx)->toUTF8String(ctx, s);
-                    result += s;
-                } else {
-                    result += "<object>";
-                }
-            } else {
-                result += "<object>";
-            }
         }
     }
     return PythonEnvironment::newStr(ctx, result);
@@ -33252,9 +33379,9 @@ void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObj
                 callObject(setitem, {frame, key->asObject(ctx), val});
             }
         }
-        const bool isNewKey = frame->hasOwnAttribute(ctx, key) != PROTO_TRUE;
+        const bool isNewKey = frame->hasOwnAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, key)) != PROTO_TRUE;
         if (!handledBySetitem) {
-            const proto::ProtoObject* updated = frame->setAttribute(ctx, key, val);
+            const proto::ProtoObject* updated = frame->setAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, key), val);
             if (updated && updated != frame) {
                 frame = updated;
                 setCurrentFrame(const_cast<proto::ProtoObject*>(updated));
@@ -33274,7 +33401,7 @@ void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObj
     }
     const proto::ProtoObject* g = getGlobals();
     if (g) {
-        const proto::ProtoObject* updated = g->setAttribute(ctx, key, val);
+        const proto::ProtoObject* updated = g->setAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, key), val);
         if (updated && updated != g) {
             setCurrentGlobals(const_cast<proto::ProtoObject*>(updated));
         }
@@ -34807,7 +34934,7 @@ void PythonEnvironment::delName(const std::string& name) {
     proto::ProtoContext* ctx = s_threadContext ? innermostContext(s_threadContext) : rootContext_;
     const proto::ProtoObject* frame = getCurrentFrame();
     if (frame) {
-        const_cast<proto::ProtoObject*>(frame)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, name.c_str()), PROTO_NONE);
+        const_cast<proto::ProtoObject*>(frame)->setAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, name), PROTO_NONE);
     }
     invalidateResolveCache();
 }
@@ -35215,7 +35342,7 @@ bool PythonEnvironment::bindUnboundDescriptorCall(proto::ProtoContext* ctx, prot
         // arguments, say) applies to every type that binds it under this
         // name, registered owner or not: range.__init__ is that function.
         const proto::ProtoObject* tp = getType(ctx, recv);
-        const proto::ProtoObject* m = tp ? getAttribute(ctx, tp, getInternedString(ctx, info.name), false) : nullptr;
+        const proto::ProtoObject* m = tp ? getAttribute(ctx, tp, getInternedString(ctx, info.name), false) : nullptr;  // raw-key: a native method's registered C++ name
         if (m && m != PROTO_NONE && m->isMethod(ctx) && m->asMethod(ctx) == fn) ok = true;
     }
     if (!ok) {
@@ -35306,12 +35433,27 @@ constexpr std::array<proto::ProtoMethod, sizeof...(I)> makeNativeThunks(std::ind
 const std::array<proto::ProtoMethod, kNativeThunks> kNativeThunkTable =
     makeNativeThunks(std::make_index_sequence<kNativeThunks>{});
 
-/** A thunk forwarding to `target`, or nullptr when the table is full. */
-proto::ProtoMethod allocateNativeThunk(proto::ProtoMethod target) {
+// The thunks are process-wide and the set of (type, name, function) triples
+// that need one is fixed by the built-in types, so each triple gets one thunk
+// for the life of the process: a second PythonEnvironment reuses the first
+// one's instead of allocating the table out.
+std::map<std::tuple<proto::ProtoMethod, std::string, std::string>, proto::ProtoMethod> g_nativeThunkByKey;
+
+/** The thunk of (`typeName`, `name`) forwarding to `target`. The table is
+ *  sized for the built-in types; running out is a build defect, reported by
+ *  an exception rather than by a type silently sharing another's identity. */
+proto::ProtoMethod allocateNativeThunk(proto::ProtoMethod target, const std::string& typeName, const std::string& name) {
     std::lock_guard<std::mutex> lock(g_nativeThunksMutex);
-    if (g_nativeThunksUsed >= kNativeThunks) return nullptr;
+    auto key = std::make_tuple(target, typeName, name);
+    if (auto it = g_nativeThunkByKey.find(key); it != g_nativeThunkByKey.end()) return it->second;
+    if (g_nativeThunksUsed >= kNativeThunks) {
+        throw std::runtime_error("protoPython: the native-method thunk table is full (" + std::to_string(kNativeThunks)
+                                 + " entries) at " + typeName + "." + name + "; raise kNativeThunks");
+    }
     g_nativeThunkTargets[g_nativeThunksUsed] = target;
-    return kNativeThunkTable[g_nativeThunksUsed++];
+    proto::ProtoMethod thunk = kNativeThunkTable[g_nativeThunksUsed++];
+    g_nativeThunkByKey.emplace(std::move(key), thunk);
+    return thunk;
 }
 } // namespace
 
@@ -35348,6 +35490,8 @@ void PythonEnvironment::registerNativeMethodNames(proto::ProtoContext* ctx) {
     const proto::ProtoString* neKey = getInternedString(ctx, "__ne__");
     const proto::ProtoObject* objectNe = objectPrototype ? objectPrototype->getAttribute(ctx, neKey) : nullptr;
     const proto::ProtoMethod objectNeFn = objectNe && objectNe->isMethod(ctx) ? objectNe->asMethod(ctx) : nullptr;
+    // One table build instead of a rehash every doubling (about 2,000 entries).
+    nativeMethodNames_.reserve(4096);
     for (const proto::ProtoObject* proto : prototypes) {
         if (!proto || proto == PROTO_NONE) continue;
         std::vector<Entry> entries;
@@ -35390,10 +35534,9 @@ void PythonEnvironment::registerNativeMethodNames(proto::ProtoContext* ctx) {
             if (it != nativeMethodNames_.end() && proto != builtinsModule && it->second.owningClass != builtinsModule
                     && e.name != "__init__" && !it->second.classLevel
                     && (e.ownCopy || it->second.name != e.name || !inherits(it->second.owningClass))) {
-                if (proto::ProtoMethod thunk = allocateNativeThunk(fn)) {
-                    const_cast<proto::ProtoObject*>(proto)->setAttribute(ctx, e.key, ctx->fromMethod(nullptr, thunk));
-                    fn = thunk;
-                }
+                proto::ProtoMethod thunk = allocateNativeThunk(fn, typeName, e.name);
+                const_cast<proto::ProtoObject*>(proto)->setAttribute(ctx, e.key, ctx->fromMethod(nullptr, thunk));
+                fn = thunk;
             }
             const bool wrapper = isSlotDunderName(e.name) && !methodNotWrapper.count(typeName + "." + e.name);
             recordNativeMethodName(reinterpret_cast<const void*>(fn), e.name, proto,

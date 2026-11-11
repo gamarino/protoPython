@@ -156,7 +156,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         if (env && opmap) {
             env->setItem(opmap, k->asObject(ctx), ctx->fromInteger(pair.second));
         } else {
-            opmap = opmap->setAttribute(ctx, k, ctx->fromInteger(pair.second));
+            opmap = opmap->setAttribute(ctx, k, ctx->fromInteger(pair.second));  // raw-key: a name from a C++ table
         }
         if (pair.second > maxOp) maxOp = pair.second;
     }

@@ -879,8 +879,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             if (nameObj && nameObj->isString(calleeCtx)) {
                 const proto::ProtoString* nameS = nameObj->asString(calleeCtx);
                 const proto::ProtoObject* oldFrame = frame;
-                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, nameS, val));
-                const proto::ProtoObject* hasAttr = frame->hasAttribute(calleeCtx, nameS);
+                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, nameS, val));  // raw-key: a compiler-made name (an identifier: no U+0001)
+                const proto::ProtoObject* hasAttr = frame->hasAttribute(calleeCtx, nameS);  // raw-key: a compiler-made name (an identifier: no U+0001)
                 if (get_env_diag()) {
                     std::string pn2; nameS->toUTF8String(calleeCtx, pn2);
                     fprintf(stderr, "DEBUG bindVar (frame): set %s = %p. frame: %p -> %p (hasAttr=%p)\n", pn2.c_str(), (void*)val, (void*)oldFrame, (void*)frame, (void*)hasAttr);
@@ -1552,28 +1552,14 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
     
     // Add missing default function attributes required by CPython/functools
     if (env) {
-        const proto::ProtoString* dictS = PythonEnvironment::getInternedString(ctx, "__dict__");
         const proto::ProtoString* annS = PythonEnvironment::getInternedString(ctx, "__annotations__");
         const proto::ProtoString* modS = PythonEnvironment::getInternedString(ctx, "__module__");
         const proto::ProtoString* docS = PythonEnvironment::getInternedString(ctx, "__doc__");
         
-        // Materialise both `__dict__` and `__annotations__` as proper empty
-        // dicts: dictPrototype->newChild() alone leaves the child without
-        // its own `__data__`/`__keys__` slots, so iteration / membership
-        // queries walk the prototype chain and surface every dict method
-        // (`pop`, `get`, `keys`, …) as a phantom annotation entry.  Bind
-        // empty SparseList/List in both canonical slots so the dict reads
-        // as `{}`.
-        auto makeFreshEmptyDict = [&]() -> const proto::ProtoObject* {
-            if (!env->getDictPrototype()) return ctx->newObject(true);
-            const proto::ProtoObject* d = env->getDictPrototype()->newChild(ctx, true);
-            d = d->setAttribute(ctx, env->getDataString(),
-                                  ctx->newSparseList()->asObject(ctx));
-            d = d->setAttribute(ctx, env->getKeysString(),
-                                  ctx->newList()->asObject(ctx));
-            return d;
-        };
-        fn = fn->setAttribute(ctx, dictS, makeFreshEmptyDict());
+        // No own `__dict__`: a function's namespace is its own attributes
+        // (py_object_get_dict filters its slots), so `f.__dict__[k] = v`,
+        // `f.k = v` and functools.wraps's `__dict__.update` all reach the
+        // same place. (An own empty dict here was a detached copy.)
         // No own __annotations__ here: functionPrototype's __annotations__
         // descriptor makes it on first read, from __annotate__ when one was
         // assigned (functools.wraps copies __annotate__, not
@@ -2096,6 +2082,71 @@ static inline bool numericSubclassFastPathOK(
 static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b);
 
+// An int operand of a float operation, converted as CPython does: exactly
+// rounded, OverflowError past the float range. protoCore's mixed operation
+// saturated a big int to inf (10**400 * 1.0 gave inf), so both operands are
+// made doubles here first when one is a float and the other a big int.
+static bool promoteBigIntForFloat(proto::ProtoContext* ctx, const proto::ProtoObject*& a,
+                                  const proto::ProtoObject*& b) {
+    const bool ad = a->isDouble(ctx), bd = b->isDouble(ctx);
+    if (ad == bd) return true;
+    const proto::ProtoObject*& i = ad ? b : a;
+    if (!i->isInteger(ctx) || proto::isSmallInt(i)) return true;
+    double d = 0.0;
+    if (!PythonEnvironment::intToDouble(ctx, i, d)) return false;
+    i = ctx->fromDouble(d);
+    return true;
+}
+
+// float ** float as CPython's float_pow: IEEE special cases, ZeroDivisionError
+// for zero to a negative power, a complex result for a negative base and a
+// non-integral exponent, OverflowError when a finite power overflows.
+static const proto::ProtoObject* floatPower(proto::ProtoContext* ctx, double x, double y) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const bool yIsInt = std::isfinite(y) && y == std::floor(y);
+    const bool oddY = yIsInt && std::fmod(std::fabs(y), 2.0) == 1.0;
+    if (y == 0.0) return ctx->fromDouble(1.0);
+    if (std::isnan(x)) return ctx->fromDouble(x);
+    if (std::isnan(y)) return ctx->fromDouble(x == 1.0 ? 1.0 : y);
+    if (std::isinf(y)) {
+        const double ax = std::fabs(x);
+        if (ax == 1.0) return ctx->fromDouble(1.0);
+        return ctx->fromDouble((y > 0.0) == (ax > 1.0) ? HUGE_VAL : 0.0);
+    }
+    if (std::isinf(x)) {
+        if (y > 0.0) return ctx->fromDouble(oddY ? x : std::fabs(x));
+        return ctx->fromDouble(oddY ? std::copysign(0.0, x) : 0.0);
+    }
+    if (x == 0.0) {
+        if (y < 0.0) {
+            if (env) env->raiseZeroDivisionError(ctx, "zero to a negative power");
+            return nullptr;
+        }
+        return ctx->fromDouble(oddY ? x : 0.0);
+    }
+    bool negate = false;
+    if (x < 0.0) {
+        if (!yIsInt) {
+            // Complex result (CPython's _Py_c_pow for a real exponent).
+            const double len = std::pow(std::fabs(x), y);
+            const double phase = std::atan2(0.0, x) * y;
+            if (!env || !env->getComplexPrototype()) return nullptr;
+            return env->callObject(env->getComplexPrototype(),
+                {ctx->fromDouble(len * std::cos(phase)), ctx->fromDouble(len * std::sin(phase))});
+        }
+        x = -x;
+        negate = oddY;
+    }
+    if (x == 1.0) return ctx->fromDouble(negate ? -1.0 : 1.0);
+    double r = std::pow(x, y);
+    if (negate) r = -r;
+    if (std::isinf(r)) {
+        if (env) env->raiseOverflowError(ctx, "(34, 'Numerical result out of range')");
+        return nullptr;
+    }
+    return ctx->fromDouble(r);
+}
+
 // `a += b`: a.__iadd__(b), then `a + b` when a has no __iadd__ or it answers
 // NotImplemented.  INPLACE_ADD and the fused ACC_FAST_FAST / INC_FAST_K
 // slow paths share it: the fused forms called binaryAdd alone, so inside a
@@ -2126,6 +2177,7 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (bothExactNumericPrim(ctx, env, a, b, aa, bb)
         || numericSubclassFastPathOK(ctx, env, a, b, aa, bb, "__add__", "__radd__")) {
+        if (!promoteBigIntForFloat(ctx, aa, bb)) return nullptr;
         return aa->add(ctx, bb);
     }
 
@@ -2261,6 +2313,7 @@ static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (bothExactNumericPrim(ctx, env, a, b, aa, bb)
         || numericSubclassFastPathOK(ctx, env, a, b, aa, bb, "__sub__", "__rsub__")) {
+        if (!promoteBigIntForFloat(ctx, aa, bb)) return nullptr;
         return aa->subtract(ctx, bb);
     }
     const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__sub__", "__rsub__");
@@ -2278,6 +2331,7 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     PythonEnvironment* env_local = PythonEnvironment::fromContext(ctx);
     if (bothExactNumericPrim(ctx, env_local, a, b, aa, bb)
         || numericSubclassFastPathOK(ctx, env_local, a, b, aa, bb, "__mul__", "__rmul__")) {
+        if (!promoteBigIntForFloat(ctx, aa, bb)) return nullptr;
         return aa->multiply(ctx, bb);
     }
     // String/bytes repetition: str * int or int * str (or bytes * int)
@@ -2449,20 +2503,13 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
         // Mixed int/float: promote to double with Python's floor-rounding.
         if ((aa->isDouble(ctx) && bb->isInteger(ctx)) ||
             (aa->isInteger(ctx) && bb->isDouble(ctx))) {
-            auto toDouble = [&](const proto::ProtoObject* o) -> double {
-                if (o->isDouble(ctx)) return o->asDouble(ctx);
-                long long asInt = 0;
-                if (PythonEnvironment::tryAsLong(ctx, o, asInt)) return static_cast<double>(asInt);
-                {
-                    const proto::ProtoString* s = o->asIntegerString(ctx, 10);
-                    std::string digits;
-                    s->toUTF8String(ctx, digits);
-                    try { return std::stod(digits); }
-                    catch (...) { return 0.0; }
-                }
-            };
-            double da = toDouble(aa);
-            double db = toDouble(bb);
+            // An int converts exactly rounded; past the float range it raises
+            // OverflowError (it read as 0.0, so 10**400 % 1.5 gave 0.0).
+            double da = 0.0, db = 0.0;
+            if (aa->isDouble(ctx)) da = aa->asDouble(ctx);
+            else if (!PythonEnvironment::intToDouble(ctx, aa, da)) return nullptr;
+            if (bb->isDouble(ctx)) db = bb->asDouble(ctx);
+            else if (!PythonEnvironment::intToDouble(ctx, bb, db)) return nullptr;
             double r = std::fmod(da, db);
             if ((r != 0.0) && ((r < 0) != (db < 0))) r += db;
             return ctx->fromDouble(r);
@@ -2506,26 +2553,39 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
         if (aa_p->isInteger(ctx) && bb_p->isInteger(ctx)) {
             long long exp = 0;
             if (!PythonEnvironment::tryAsLong(ctx, bb_p, exp)) {
-                // Exponents that don't fit int64 are astronomical; fall
-                // through to the double path (returns inf/0 as CPython
-                // does via floats).
-                double aa = static_cast<double>(aa_p->asLong(ctx));
-                double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : 0.0;
-                return ctx->fromDouble(std::pow(aa, bb));
+                // An exponent beyond int64: exact for a base of 0, 1 or -1,
+                // a float for a negative one; anything else is too large.
+                const int expSign = bb_p->integerSign(ctx);
+                long long base_l = 0;
+                const bool smallBase = PythonEnvironment::tryAsLong(ctx, aa_p, base_l);
+                if (smallBase && (base_l == 0 || base_l == 1 || base_l == -1)) {
+                    if (base_l == 0 && expSign < 0) {
+                        if (env_pow) env_pow->raiseZeroDivisionError(ctx, "zero to a negative power");
+                        return nullptr;
+                    }
+                    if (base_l == -1) {
+                        const proto::ProtoObject* parity = bb_p->modulo(ctx, ctx->fromInteger(2));
+                        const bool odd = parity->integerSign(ctx) != 0;
+                        if (expSign < 0) return ctx->fromDouble(odd ? -1.0 : 1.0);
+                        return ctx->fromInteger(odd ? -1 : 1);
+                    }
+                    if (expSign < 0) return ctx->fromDouble(static_cast<double>(base_l));
+                    return ctx->fromInteger(base_l);
+                }
+                if (expSign < 0) {
+                    double bd = 0.0;
+                    if (!PythonEnvironment::intToDouble(ctx, aa_p, bd)) return nullptr;
+                    return floatPower(ctx, bd, -HUGE_VAL);
+                }
+                if (env_pow) env_pow->raiseOverflowError(ctx, "integer exponentiation result too large");
+                return nullptr;
             }
             if (exp < 0) {
-                long long base_l = 0;
-                double base_d = PythonEnvironment::tryAsLong(ctx, aa_p, base_l) ? static_cast<double>(base_l) : 0.0;
-                // CPython: 0 ** -1 raises
-                //   ZeroDivisionError: 0.0 cannot be raised to a negative power
-                // protoPython returned `inf` (std::pow(0.0, -1) is inf in
-                // IEEE 754) and a downstream subscript / division then
-                // hung the interpreter.  Raise the canonical error.
-                if (base_d == 0.0) {
-                    if (env_pow) env_pow->raiseZeroDivisionError(ctx);
-                    return nullptr;
-                }
-                return ctx->fromDouble(std::pow(base_d, static_cast<double>(exp)));
+                // int ** negative int is a float power (the base converted
+                // exactly; OverflowError past the float range).
+                double base_d = 0.0;
+                if (!PythonEnvironment::intToDouble(ctx, aa_p, base_d)) return nullptr;
+                return floatPower(ctx, base_d, static_cast<double>(exp));
             }
             // Exponentiation by squaring via Integer::multiply so the
             // result promotes to bignum automatically when it exceeds
@@ -2540,9 +2600,12 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
             }
             return result;
         }
-        double aa = aa_p->isDouble(ctx) ? aa_p->asDouble(ctx) : static_cast<double>(aa_p->asLong(ctx));
-        double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : static_cast<double>(bb_p->asLong(ctx));
-        return ctx->fromDouble(std::pow(aa, bb));
+        double aa = 0.0, bb = 0.0;
+        if (aa_p->isDouble(ctx)) aa = aa_p->asDouble(ctx);
+        else if (!PythonEnvironment::intToDouble(ctx, aa_p, aa)) return nullptr;
+        if (bb_p->isDouble(ctx)) bb = bb_p->asDouble(ctx);
+        else if (!PythonEnvironment::intToDouble(ctx, bb_p, bb)) return nullptr;
+        return floatPower(ctx, aa, bb);
     }
     // User-class fallback: __pow__ / __rpow__.
     const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__pow__", "__rpow__");
@@ -2556,7 +2619,7 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
     PythonEnvironment* env_fd = PythonEnvironment::fromContext(ctx);
     if (bothExactNumericPrim(ctx, env_fd, a, b, aa_p, bb_p)
         || numericSubclassFastPathOK(ctx, env_fd, a, b, aa_p, bb_p, "__floordiv__", "__rfloordiv__")) {
-        if ((bb_p->isInteger(ctx) && bb_p->asLong(ctx) == 0) || (bb_p->isDouble(ctx) && bb_p->asDouble(ctx) == 0.0)) {
+        if ((bb_p->isInteger(ctx) && bb_p->integerSign(ctx) == 0) || (bb_p->isDouble(ctx) && bb_p->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
             return PROTO_NONE;
         }
@@ -2589,9 +2652,25 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
         }
         // A float operand makes the result a float (CPython: 7 // 2.0 == 3.0).
         // asDouble also converts ints beyond long long, where asLong threw.
-        double aa = aa_p->asDouble(ctx);
-        double bb = bb_p->asDouble(ctx);
-        return ctx->fromDouble(std::floor(aa / bb));
+        // Ints convert exactly rounded (OverflowError past the range), and the
+        // quotient is CPython's float floor division: floor of the exact
+        // quotient, from fmod's remainder.
+        double aa = 0.0, bb = 0.0;
+        if (aa_p->isDouble(ctx)) aa = aa_p->asDouble(ctx);
+        else if (!PythonEnvironment::intToDouble(ctx, aa_p, aa)) return nullptr;
+        if (bb_p->isDouble(ctx)) bb = bb_p->asDouble(ctx);
+        else if (!PythonEnvironment::intToDouble(ctx, bb_p, bb)) return nullptr;
+        double mod = std::fmod(aa, bb);
+        double div = (aa - mod) / bb;
+        if (mod != 0.0 && ((bb < 0.0) != (mod < 0.0))) div -= 1.0;
+        double floordiv;
+        if (div != 0.0) {
+            floordiv = std::floor(div);
+            if (div - floordiv > 0.5) floordiv += 1.0;
+        } else {
+            floordiv = std::copysign(0.0, aa / bb);
+        }
+        return ctx->fromDouble(floordiv);
     }
     // User-class fallback: __floordiv__ / __rfloordiv__.
     const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__floordiv__", "__rfloordiv__");
@@ -2918,6 +2997,17 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
 }
 
 } // namespace
+
+// a ** b for two exact numbers (int, float): the interpreter's semantics,
+// for int.__pow__ and float.__pow__ called directly.
+const proto::ProtoObject* PythonEnvironment::numberPower(proto::ProtoContext* ctx,
+    const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    return binaryPower(ctx, a, b);
+}
+
+const proto::ProtoObject* PythonEnvironment::floatPow(proto::ProtoContext* ctx, double x, double y) {
+    return floatPower(ctx, x, y);
+}
 
 // Declared in ExecutionEngine.h, so defined outside the anonymous namespace.
 const proto::ProtoObject* containsOperator(proto::ProtoContext* ctx,
@@ -3343,8 +3433,8 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
                         if (rcvType) {
                             const proto::ProtoString* attrKey =
                                 PythonEnvironment::getInternedString(ctx, mnm.c_str());
-                            if (attrKey && rcvType->hasOwnAttribute(ctx, attrKey) == PROTO_TRUE) {
-                                const proto::ProtoObject* ownVal =
+                            if (attrKey && rcvType->hasOwnAttribute(ctx, attrKey) == PROTO_TRUE) {  // raw-key: a native method's registered C++ name
+                                const proto::ProtoObject* ownVal =  // raw-key: a native method's registered C++ name
                                     rcvType->getOwnAttributeDirect(ctx, attrKey);
                                 if (ownVal && ownVal->asMethod(ctx) == method->asMethod(ctx)) {
                                     sharedImpl = true;
@@ -3369,8 +3459,8 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
                         if (rcvType) {
                             const proto::ProtoString* attrKey =
                                 PythonEnvironment::getInternedString(ctx, mnm.c_str());
-                            if (attrKey && rcvType->hasOwnAttribute(ctx, attrKey) == PROTO_TRUE) {
-                                const proto::ProtoObject* ownVal =
+                            if (attrKey && rcvType->hasOwnAttribute(ctx, attrKey) == PROTO_TRUE) {  // raw-key: a native method's registered C++ name
+                                const proto::ProtoObject* ownVal =  // raw-key: a native method's registered C++ name
                                     rcvType->getOwnAttributeDirect(ctx, attrKey);
                                 // Distinct fn → genuine misbind.
                                 // (Same fn already handled above.)
@@ -5490,7 +5580,10 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
     const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
     const proto::ProtoObject* moduleName = nullptr;
     if (globals) {
-        moduleName = globals->getAttribute(ctx, py_name_s);
+        // `__name__` as the body's LOAD_NAME reads it: the globals (a dict's
+        // items for exec() in a dict, not dict.__name__), then the builtins.
+        moduleName = env && globals == PythonEnvironment::getCurrentGlobals()
+            ? env->resolveGlobalName(py_name_s, ctx) : globals->getAttribute(ctx, py_name_s);
         if (!moduleName || moduleName == PROTO_NONE) {
             moduleName = globals->getAttribute(ctx, py_module_s);
         }
@@ -5816,7 +5909,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                             const proto::ProtoObject* v = nullptr;
                             const proto::ProtoObject* isAbs = nullptr;
                             try {
-                                v = env->getAttribute(ctx, ns, nameS_, false);
+                                v = env->getAttribute(ctx, ns, nameS_, false);  // raw-key: dead code (if (false))
                                 if (v && v != PROTO_NONE) isAbs = env->getAttribute(ctx, v, abstractS, false);
                             } catch (const proto::ProtoException&) {
                                 isAbs = nullptr;
@@ -6356,7 +6449,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     // interned, as getOwnAttributeDirect requires; it returns nullptr
                     // for an absent name and the stored value, PROTO_NONE included
                     // (`x = None`), for a present one.
-                    if (const proto::ProtoObject* own = frame->getOwnAttributeDirect(ctx, nameS)) {
+                    if (const proto::ProtoObject* own = frame->getOwnAttributeDirect(ctx, nameS)) {  // raw-key: a compiler-made name (an identifier: no U+0001)
                         val = own;
                         found = true;
                     }
@@ -6396,8 +6489,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     // only when val == PROTO_NONE — the ambiguous case.  On the common
                     // path (val is a non-None value, or val is nullptr) we read once.
                     if (!found) {
-                        val = frame->getAttribute(ctx, nameS);
-                        if (val != nullptr && (val != PROTO_NONE
+                        val = frame->getAttribute(ctx, nameS);  // raw-key: a compiler-made name (an identifier: no U+0001)
+                        if (val != nullptr && (val != PROTO_NONE  // raw-key: a compiler-made name (an identifier: no U+0001)
                                                || frame->hasAttribute(ctx, nameS) == PROTO_TRUE)) {
                             found = true;
                         }
@@ -6414,7 +6507,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             // Modules hold copies of modulePrototype's methods:
                             // compare native methods by function.
                             auto providedBy = [&](const proto::ProtoObject* proto) {
-                                const proto::ProtoObject* pv = proto ? proto->getAttribute(ctx, nameS) : nullptr;
+                                const proto::ProtoObject* pv = proto ? proto->getAttribute(ctx, nameS) : nullptr;  // raw-key: a compiler-made name (an identifier: no U+0001)
                                 return pv && (pv == val
                                     || (pv->isMethod(ctx) && val->isMethod(ctx)
                                         && pv->asMethod(ctx) == val->asMethod(ctx)));
@@ -6436,7 +6529,10 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
 
                     // A module's __class__ and modulePrototype's methods are attributes
                     // of the module object, not globals: look further, as for a missing name.
-                    if (found && env && env->isInheritedModuleName(ctx, frame, nameS, val)) {
+                    // So are the dict type's attributes (dict.__name__ is 'dict') for
+                    // exec()/eval() run in a dict: its names are the dict's items.
+                    if (found && env && (env->isInheritedModuleName(ctx, frame, nameS, val)
+                                         || env->isDictNamespaceTypeAttribute(ctx, frame, nameS))) {
                         found = false;
                         val = nullptr;
                     }
@@ -6547,11 +6643,11 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     }
 
                     // Is this key already present in the frame's own attributes?
-                    const bool isNewKey = frame->hasOwnAttribute(ctx, nS) != PROTO_TRUE;
+                    const bool isNewKey = frame->hasOwnAttribute(ctx, nS) != PROTO_TRUE;  // raw-key: a compiler-made name (an identifier: no U+0001)
 
                     if (!handledBySetitem) {
                         const proto::ProtoObject* oldFrame = frame;
-                        const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nS, val);
+                        const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nS, val);  // raw-key: a compiler-made name (an identifier: no U+0001)
                         frame = const_cast<proto::ProtoObject*>(newFrame);
                         syncModuleIdentity(ctx, env, oldFrame, newFrame);
 
@@ -6665,7 +6761,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
 
             const proto::ProtoObject* result = inplaceAdd(ctx, env, a, b);
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_BINARY_SUBTRACT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6762,7 +6858,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = binaryMultiply(ctx, a, b);
             }
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_BINARY_TRUE_DIVIDE: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6898,7 +6994,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 env ? env->getITrueDivString() : PythonEnvironment::getInternedString(ctx, "__itruediv__"));
             if (!result) result = binaryTrueDivide(ctx, a, b);
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_INPLACE_FLOOR_DIVIDE: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6908,7 +7004,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 env ? env->getIFloorDivString() : PythonEnvironment::getInternedString(ctx, "__ifloordiv__"));
             if (!result) result = binaryFloorDivide(ctx, a, b);
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_INPLACE_MODULO: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6918,7 +7014,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 env ? env->getIModString() : PythonEnvironment::getInternedString(ctx, "__imod__"));
             if (!result) result = binaryModulo(ctx, a, b);
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_INPLACE_POWER: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -6989,7 +7085,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = binaryOpDispatch(ctx, a, b, "__lshift__", "__rlshift__");
             }
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_INPLACE_RSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -7006,7 +7102,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = binaryOpDispatch(ctx, a, b, "__rshift__", "__rrshift__");
             }
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_INPLACE_AND: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -7021,7 +7117,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = binaryOpDispatch(ctx, a, b, "__and__", "__rand__");
             }
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_INPLACE_OR: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -7036,7 +7132,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = binaryOpDispatch(ctx, a, b, "__or__", "__ror__");
             }
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_INPLACE_XOR: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -7051,7 +7147,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = binaryOpDispatch(ctx, a, b, "__xor__", "__rxor__");
             }
             stack.pop_back();
-            stack.back() = result ? result : PROTO_NONE;
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_BINARY_LSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -7290,7 +7386,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 }
                 if (!handled) {
                     const proto::ProtoObject* result = invokeDunder(ctx, a, negS, ctx->newList());
-                    stack.back() = result ? result : PROTO_NONE;
+                    stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
                 }
             }
         } break;
@@ -7324,7 +7420,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 }
                 if (!handled) {
                     const proto::ProtoObject* result = invokeDunder(ctx, a, invS, ctx->newList());
-                    stack.back() = result ? result : PROTO_NONE;
+                    stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
                 }
             }
         } break;
@@ -7486,7 +7582,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                         std::string n;
                                         s->toUTF8String(ctx, n);
                                         if (!n.empty() && n[0] != '_' && PythonEnvironment::pythonAttributeName(ctx, s)) {
-                                            const proto::ProtoObject* val = mod->getAttribute(ctx, s);
+                                            const proto::ProtoObject* val = mod->getAttribute(ctx, s);  // raw-key: a stored key, checked by pythonAttributeName above
                                             if (val) {
                                                 bindImported(s, val);
                                             }
@@ -7528,14 +7624,14 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     // provides IsolatedAsyncioTestCase only through it, and
                     // `from unittest import IsolatedAsyncioTestCase` failed.
                     try {
-                        val = (env)
+                        val = (env)  // raw-key: a compiler-made name (an identifier: no U+0001)
                             ? env->loadAttr(ctx, mod, nameS, nullptr, false)
                             : mod->getAttribute(ctx, nameS);
                     } catch (const proto::ProtoException&) {
                         val = nullptr;
                     }
 
-                    if (val && (val != PROTO_NONE || mod->hasAttribute(ctx, nameS) == PROTO_TRUE)) {
+                    if (val && (val != PROTO_NONE || mod->hasAttribute(ctx, nameS) == PROTO_TRUE)) {  // raw-key: a compiler-made name (an identifier: no U+0001)
                         stack.push_back(val);
                     } else {
                         if (env) {
@@ -8134,23 +8230,28 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             stack.push_back(finalSet);
         } break;
         case OP_FORMAT_VALUE: {
-            if (stack.size() < 1) continue;
-            const proto::ProtoObject* val = stack.back();
-            stack.pop_back();
-            // arg bits: 0x03 format (0=raw, 1=str, 2=repr, 3=ascii), 0x04 has_fmt_spec
-            int format = arg & 0x03;
-            bool hasSpec = (arg & 0x04);
-            if (hasSpec) stack.pop_back();
-            
-            const proto::ProtoObject* result = nullptr;
-            if (format == 0) {
-                result = val;
-            } else {
-                std::string r = PythonEnvironment::reprObject(ctx, val);
-                const proto::ProtoString* pstr = proto::ProtoString::fromUTF8(ctx, r.c_str());
-                result = pstr ? pstr->asObject(ctx) : nullptr;
+            // [value] or [value, spec] -> format(conversion(value), spec)
+            // (Compiler::compileFormattedValue). Operands stay on the stack,
+            // rooted, until the result replaces them.
+            const bool hasSpec = (arg & 0x04) != 0;
+            if (stack.size() < (hasSpec ? 2u : 1u)) continue;
+            // A plain field holding an exact str, int, float or bool stays as
+            // it is: these are immutable and their format(x, '') is fixed, so
+            // BUILD_STRING formats it into the joined text with no str object
+            // of its own, and no later field can change what it shows.
+            if (arg == 0) {
+                const proto::ProtoObject* v = stack.back();
+                if (v && (proto::ProtoObject::isStringTagFast(v) || proto::isSmallInt(v)
+                          || v == PROTO_TRUE || v == PROTO_FALSE || v->isDouble(ctx))) break;
             }
-            stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
+            const proto::ProtoObject* spec = hasSpec ? stack.back() : nullptr;
+            const proto::ProtoObject* val = stack[stack.size() - (hasSpec ? 2 : 1)];
+            static const char kConv[4] = {0, 's', 'r', 'a'};
+            if (spec && !spec->isString(ctx)) spec = nullptr;
+            const proto::ProtoObject* result =
+                protoPython::PythonEnvironment::formatValue(ctx, val, kConv[arg & 0x03], spec);
+            if (hasSpec) stack.pop_back();
+            stack.back() = const_cast<proto::ProtoObject*>(result ? result : PROTO_NONE);
         } break;
         case OP_PUSH_NULL: {
             stack.push_back(nullptr);
@@ -8310,13 +8411,13 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         if (cls && cls != PROTO_NONE && cls != obj
                                 && !(env->ensureClassFlags(ctx, cls)
                                      & protoPython::PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR)) {
-                            const proto::ProtoObject* v = obj->getAttribute(ctx, attrName);
+                            const proto::ProtoObject* v = obj->getAttribute(ctx, attrName);  // raw-key: a compiler-made name (an identifier: no U+0001)
                             bool plain = proto::isSmallInt(v) || proto::ProtoObject::isStringTagFast(v)
                                       || v == PROTO_TRUE || v == PROTO_FALSE;
                             bool bindToObj = false;
                             if (v == PROTO_NONE) {
                                 // None, or absent (__getattr__, AttributeError).
-                                plain = obj->hasAttribute(ctx, attrName) == PROTO_TRUE;
+                                plain = obj->hasAttribute(ctx, attrName) == PROTO_TRUE;  // raw-key: a compiler-made name (an identifier: no U+0001)
                             } else if (!plain && v && !v->isMethod(ctx)) {
                                 const proto::ProtoObject* vt = v->getFirstParent(ctx);
                                 if (vt == env->getFunctionPrototype()) {
@@ -8328,7 +8429,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                     // object of a plain LOAD_ATTR takes the paths
                                     // below.
                                     if (pushNull) {
-                                        if (obj->getOwnAttributeDirect(ctx, attrName) == v) plain = true;
+                                        if (obj->getOwnAttributeDirect(ctx, attrName) == v) plain = true;  // raw-key: a compiler-made name (an identifier: no U+0001)
                                         else bindToObj = obj->getFirstParent(ctx) == cls;
                                     }
                                 } else {
@@ -10129,7 +10230,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     // env is null (unit-test context) — fall back to getCurrentGlobals() or frame.
                     const proto::ProtoObject* globalsObj = PythonEnvironment::getCurrentGlobals();
                     if (!globalsObj) globalsObj = frame;
-                    const proto::ProtoObject* val = globalsObj ? globalsObj->getAttribute(ctx, nameS) : nullptr;
+                    const proto::ProtoObject* val = globalsObj ? globalsObj->getAttribute(ctx, nameS) : nullptr;  // raw-key: a compiler-made name (an identifier: no U+0001)
                     if (val && val != PROTO_NONE) {
                         if (pushNull) stack.push_back(nullptr);
                         stack.push_back(val);
@@ -10338,7 +10439,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
 
             const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "\001__data__");
             const proto::ProtoString* keysS = env ? env->getKeysString() : PythonEnvironment::getInternedString(ctx, "\001__keys__");
-            const bool ownAttr = target->hasOwnAttribute(ctx, nS) == PROTO_TRUE;
+            const bool ownAttr = target->hasOwnAttribute(ctx, nS) == PROTO_TRUE;  // raw-key: a compiler-made name (an identifier: no U+0001)
             const proto::ProtoObject* dataObj = target->getAttribute(ctx, dataS);
             const proto::ProtoSparseList* dataList = dataObj ? dataObj->asSparseList(ctx) : nullptr;
             const bool inData = dataList && PythonEnvironment::dictDataGet(ctx, dataList, nameObj) != nullptr;
@@ -10354,7 +10455,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
 
             const proto::ProtoObject* oldTarget = target;
             if (ownAttr) {
-                target = const_cast<proto::ProtoObject*>(target->removeAttribute(ctx, nS));
+                target = const_cast<proto::ProtoObject*>(target->removeAttribute(ctx, nS));  // raw-key: a compiler-made name (an identifier: no U+0001)
             }
             if (inData) {
                 target = const_cast<proto::ProtoObject*>(target->setAttribute(ctx, dataS,

@@ -1544,134 +1544,117 @@ std::unique_ptr<ASTNode> Parser::parseLambda() {
     return node;
 }
 
-bool Parser::parseFStringBody(const std::string& raw, int firstLine, JoinedStrNode* joined, int specDepth) {
+bool Parser::parseFStringBody(const std::string& raw, int firstLine, JoinedStrNode* joined, int specDepth,
+                              bool rawString) {
+    // `raw` is the f-string token's text: the literal parts with their
+    // escapes already decoded (and an escaped brace doubled), each
+    // replacement field as written. Inside a format spec (specDepth > 0) the
+    // literal parts are still as written: their escapes are decoded here,
+    // unless the f-string is raw.
     auto lineAt = [&](size_t offset) {
         return firstLine + static_cast<int>(std::count(raw.begin(), raw.begin() + static_cast<std::ptrdiff_t>(std::min(offset, raw.size())), '\n'));
     };
+    std::string literal;
+    auto flushLiteral = [&]() -> bool {
+        if (literal.empty()) return true;
+        auto part = createNode<ConstantNode>();
+        part->constType = ConstantNode::ConstType::Str;
+        if (specDepth > 0 && !rawString) {
+            std::string decoded, err;
+            if (!decodeStrEscapes(literal, decoded, err)) { error(err); return false; }
+            part->strVal = decoded;
+        } else {
+            part->strVal = literal;
+        }
+        joined->values.push_back(std::move(part));
+        literal.clear();
+        return true;
+    };
     size_t i = 0;
     while (i < raw.size()) {
-        size_t nextOpen = raw.find('{', i);
-        size_t nextClose = raw.find('}', i);
-        
-        if (nextOpen == std::string::npos && nextClose == std::string::npos) {
-            auto part = createNode<ConstantNode>();
-            part->constType = ConstantNode::ConstType::Str;
-            part->strVal = raw.substr(i);
-            joined->values.push_back(std::move(part));
-            break;
-        }
-        
-        size_t next = std::min(nextOpen == std::string::npos ? (size_t)-1 : nextOpen, 
-                               nextClose == std::string::npos ? (size_t)-1 : nextClose);
-        
-        if (next > i) {
-            auto part = createNode<ConstantNode>();
-            part->constType = ConstantNode::ConstType::Str;
-            part->strVal = raw.substr(i, next - i);
-            joined->values.push_back(std::move(part));
-            i = next;
-        }
-        
-        if (i < raw.size() && raw[i] == '{') {
-            if (i + 1 < raw.size() && raw[i + 1] == '{') {
-                auto part = createNode<ConstantNode>();
-                part->constType = ConstantNode::ConstType::Str;
-                part->strVal = "{";
-                joined->values.push_back(std::move(part));
-                i += 2;
-            } else {
-                i++;
-                size_t closeBrace = std::string::npos;
-                int braceDepth = 1;
-                for (size_t searchIdx = i; searchIdx < raw.size(); ++searchIdx) {
-                    if (raw[searchIdx] == '{') {
-                        braceDepth++;
-                    } else if (raw[searchIdx] == '}') {
-                        braceDepth--;
-                        if (braceDepth == 0) {
-                            closeBrace = searchIdx;
-                            break;
-                        }
-                    }
-                }
-                
-                if (closeBrace == std::string::npos) {
-                    error("f-string: missing '}'");
-                    return false;
-                }
-                std::string fullExprStr = raw.substr(i, closeBrace - i);
-                const int exprLine = lineAt(i);
-                i = closeBrace + 1;
-                
-                size_t exclamation = std::string::npos;
-                size_t colon = std::string::npos;
-                int depth = 0;
-                for (size_t k = 0; k < fullExprStr.size(); ++k) {
-                    if (fullExprStr[k] == '(' || fullExprStr[k] == '[' || fullExprStr[k] == '{') depth++;
-                    else if (fullExprStr[k] == ')' || fullExprStr[k] == ']' || fullExprStr[k] == '}') depth--;
-                    else if (depth == 0) {
-                        if (fullExprStr[k] == '!' && exclamation == std::string::npos) {
-                            exclamation = k;
-                        } else if (fullExprStr[k] == ':' && colon == std::string::npos) {
-                            colon = k;
-                            break;
-                        }
-                    }
-                }
-
-                std::string exprStr = fullExprStr;
-                char conversion = 0;
-                std::string format_spec;
-
-                if (colon != std::string::npos) {
-                    format_spec = fullExprStr.substr(colon + 1);
-                    exprStr = fullExprStr.substr(0, colon);
-                }
-                if (exclamation != std::string::npos && (colon == std::string::npos || exclamation < colon)) {
-                    std::string convStr = fullExprStr.substr(exclamation + 1, (colon == std::string::npos ? std::string::npos : colon - exclamation - 1));
-                    if (!convStr.empty()) conversion = convStr[0];
-                    exprStr = fullExprStr.substr(0, exclamation);
-                }
-
-                Parser subParser(exprStr, exprLine);
-                auto expr = subParser.parseExpression();
-                if (subParser.hasError()) {
-                    error("f-string expression error: " + subParser.getLastErrorMsg());
-                    return false;
-                }
-                auto fv = createNode<FormattedValueNode>();
-                fv->line = exprLine;
-                fv->value = std::move(expr);
-                fv->conversion = conversion;
-                if (format_spec.find('{') != std::string::npos || format_spec.find('}') != std::string::npos) {
-                    // Replacement fields in the spec: evaluated, then joined.
-                    if (specDepth >= 2) {
-                        error("f-string: expressions nested too deeply");
-                        return false;
-                    }
-                    auto spec = createNode<JoinedStrNode>();
-                    spec->line = exprLine;
-                    if (!parseFStringBody(format_spec, exprLine, spec.get(), specDepth + 1)) return false;
-                    fv->format_spec_node = std::move(spec);
-                } else {
-                    fv->format_spec = format_spec;
-                }
-                joined->values.push_back(std::move(fv));
+        const char c = raw[i];
+        if (specDepth > 0 && c == '\\' && i + 1 < raw.size()) {
+            // An escape of the spec, kept for decoding (`\N{...}` is not a field).
+            size_t to = i + 2;
+            if (raw[i + 1] == 'N' && i + 2 < raw.size() && raw[i + 2] == '{') {
+                const size_t close = raw.find('}', i + 3);
+                to = close == std::string::npos ? raw.size() : close + 1;
             }
-        } else if (i < raw.size() && raw[i] == '}') {
-            if (i + 1 < raw.size() && raw[i + 1] == '}') {
-                auto part = createNode<ConstantNode>();
-                part->constType = ConstantNode::ConstType::Str;
-                part->strVal = "}";
-                joined->values.push_back(std::move(part));
-                i += 2;
-            } else {
-                error("f-string: single '}' is not allowed");
+            literal.append(raw, i, to - i);
+            i = to;
+            continue;
+        }
+        if (c == '}') {
+            if (i + 1 < raw.size() && raw[i + 1] == '}') { literal += '}'; i += 2; continue; }
+            error("f-string: single '}' is not allowed");
+            return false;
+        }
+        if (c != '{') { literal += c; ++i; continue; }
+        if (i + 1 < raw.size() && raw[i + 1] == '{') { literal += '{'; i += 2; continue; }
+
+        // A replacement field.
+        FStringField f;
+        if (!scanFStringField(raw, i + 1, f)) { error(f.error); return false; }
+        const size_t exprStart = i + 1;
+        const int exprLine = lineAt(exprStart);
+        const std::string exprText = raw.substr(exprStart, f.exprEnd - exprStart);
+        if (exprText.find_first_not_of(" \t\n\r\f") == std::string::npos) {
+            const char next = raw[f.exprEnd];
+            error(std::string("f-string: valid expression required before '") + next + "'");
+            return false;
+        }
+        if (specDepth >= 3) {
+            error("f-string: expressions nested too deeply");
+            return false;
+        }
+        if (f.debugEnd != FStringField::npos) {
+            // f'{expr=}': the expression's text, '=' and the whitespace around it.
+            literal += raw.substr(exprStart, f.debugEnd - exprStart);
+        }
+        if (!flushLiteral()) return false;
+        char conversion = 0;
+        if (f.hasConversion) {
+            if (f.conversion.size() != 1 ||
+                (f.conversion[0] != 's' && f.conversion[0] != 'r' && f.conversion[0] != 'a')) {
+                error(f.conversion.empty()
+                    ? std::string("f-string: missing conversion character")
+                    : "f-string: invalid conversion character '" + f.conversion + "': expected 's', 'r', or 'a'");
                 return false;
             }
+            conversion = f.conversion[0];
+        } else if (f.debugEnd != FStringField::npos && f.specStart == FStringField::npos) {
+            conversion = 'r';   // '=' without a conversion or a spec shows repr()
         }
+        // Parenthesised, as CPython does: surrounding whitespace, newlines and
+        // a trailing comment are then part of a valid expression.
+        Parser subParser("(" + exprText + "\n)", exprLine);
+        auto expr = subParser.parseExpression();
+        if (subParser.hasError() || !expr) {
+            error("f-string expression error: " + subParser.getLastErrorMsg());
+            return false;
+        }
+        auto fv = createNode<FormattedValueNode>();
+        fv->line = exprLine;
+        fv->value = std::move(expr);
+        fv->conversion = conversion;
+        if (f.specStart != FStringField::npos) {
+            const std::string spec = raw.substr(f.specStart, f.specEnd - f.specStart);
+            auto specNode = createNode<JoinedStrNode>();
+            specNode->line = exprLine;
+            if (!parseFStringBody(spec, exprLine, specNode.get(), specDepth + 1, rawString)) return false;
+            bool constant = true;
+            std::string text;
+            for (auto& v : specNode->values) {
+                if (auto* cn = dynamic_cast<ConstantNode*>(v.get())) text += cn->strVal;
+                else constant = false;
+            }
+            if (constant) fv->format_spec = text;
+            else fv->format_spec_node = std::move(specNode);
+        }
+        joined->values.push_back(std::move(fv));
+        i = f.end;
     }
-    return true;
+    return flushLiteral();
 }
 
 std::unique_ptr<ASTNode> Parser::parseFString() {
@@ -1685,8 +1668,9 @@ std::unique_ptr<ASTNode> Parser::parseFString() {
     // PEP 750 t-strings from PEP 498 f-strings.  Both share the same
     // interpolation AST but are reported as distinct runtime types.
     joined->isTString = cur_.isTString;
+    const bool rawString = cur_.isRawString;
     advance(); // FString token
-    if (!parseFStringBody(raw, fstringLine, joined.get(), 0)) return nullptr;
+    if (!parseFStringBody(raw, fstringLine, joined.get(), 0, rawString)) return nullptr;
     // The literal parts were created after the f-string token was consumed;
     // they belong to the f-string's line, not to the next token's.
     joined->line = fstringLine;

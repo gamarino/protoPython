@@ -390,9 +390,8 @@ mechanically:
 - the switch handles **114**; the other 5 (`GEN_START`, `GET_LEN`,
   `MATCH_MAPPING`, `MATCH_SEQUENCE`, `EXTENDED_ARG`) are reserved: defined,
   never emitted, and a no-op if executed (the switch's `default`);
-- the compiler emits **111**: all but those 5 and `ROT_FOUR`,
-  `FORMAT_VALUE`, `SETUP_ASYNC_WITH`, which the VM handles but nothing
-  produces; `NOP`, `ACC_FAST_FAST`, `INC_FAST_K` and `LT_FAST_FAST_JF` are
+- the compiler emits **112**: all but those 5 and `ROT_FOUR`,
+  `SETUP_ASYNC_WITH`, which the VM handles but nothing produces; `NOP`, `ACC_FAST_FAST`, `INC_FAST_K` and `LT_FAST_FAST_JF` are
   produced only by the peephole specialiser;
 - `_opcode.opmap` (`OpcodeModule.cpp`) lacks 8 opcodes (`PUSH_NULL`,
   `BUILD_RAW_LIST`, `WRAP_RAW_LIST`, the three fused ones and the two write
@@ -605,7 +604,7 @@ Produced only by `Compiler::specialiseBytecode` (1.2), each followed by three
 | `MATCH_MAPPING` | 199 | reserved (`match` compiles to calls of `isinstance`, `len`, ...) |
 | `MATCH_SEQUENCE` | 200 | reserved |
 | `EXTENDED_ARG` | 201 | reserved (arguments are full integers) |
-| `FORMAT_VALUE` | 196 | handled, never emitted: f-string conversions compile to calls of `repr`/`str`/`ascii` and `format`. Its handler pops the value before the format specification, the reverse of CPython's order. |
+| `FORMAT_VALUE` | 196 | emitted for each f-string field (no longer reserved): pops the spec (arg bit `0x04`) and the value, applies the conversion (arg & `0x03`: 1 `!s`, 2 `!r`, 3 `!a`) and pushes `format(value, spec)` (`PythonEnvironment::formatValue`: exact int, float, bool and str are formatted directly, any other value through `type(value).__format__`). It looks up no name, so a program that rebinds `format`, `str` or `repr` does not change its f-strings. A plain field (arg 0) holding an exact str, int, float or bool is left as it is: these are immutable, and `BUILD_STRING` writes their text into the joined string without a str object of their own. |
 | `ROT_FOUR` | 154 | handled, never emitted |
 | `SETUP_ASYNC_WITH` | 191 | handled, never emitted |
 | `JUMP_FORWARD` | 195 | handled, never emitted (the compiler's forward jumps are `JUMP_ABSOLUTE`) |
@@ -2326,21 +2325,19 @@ code 0.1: largest (17-misc.py, line 7)
 
 code 0.2: label (17-misc.py, line 11)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 135: variables 0..1, operand stack from 2
+  slots 133: variables 0..1, operand stack from 2
   constants:
     #0   str     ': '
     #1   none    None
-  names:
-    #0   repr
   variables (slot):
     #0   name
     #1   n
   code:
     11     0  LOAD_FAST                     0  ; name
-           2  LOAD_CONST                    0  ; ': '
-           4  LOAD_GLOBAL                   1  ; repr (+ NULL)
+           2  FORMAT_VALUE                  0
+           4  LOAD_CONST                    0  ; ': '
            6  LOAD_FAST                     1  ; n
-           8  CALL_FUNCTION                 1  ; 1 positional
+           8  FORMAT_VALUE                  2
           10  BUILD_STRING                  3
           12  RETURN_VALUE                  0
           14  LOAD_CONST                    1  ; None
@@ -2354,8 +2351,10 @@ code 0.2: label (17-misc.py, line 11)
   The handler at 38 calls `__exit__` with the exception and re-raises unless
   it returned a true value.
 - `max(*args)` is `CALL_FUNCTION_EX 0`.
-- `f"{name}: {n!r}"` is `BUILD_STRING 3`; `!r` is a call of the global
-  `repr`. Every part carries the f-string's line.
+- `f"{name}: {n!r}"` is `BUILD_STRING 3` over three parts; each field is
+  `FORMAT_VALUE` (here `FORMAT_VALUE 0` for `{name}` and `FORMAT_VALUE 2`,
+  conversion `!r`, for `{n!r}`), which formats as `format(value, spec)`
+  without looking up a name. Every part carries the f-string's line.
 
 ### Example 18: `match`
 
