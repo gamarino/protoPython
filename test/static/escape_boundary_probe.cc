@@ -62,6 +62,10 @@ static void probe2(proto::ProtoContext* ctx, const proto::ProtoObject* obj, cons
     bool i6 = !attrName.empty() && attrName[0] < ' ';                                  // expect: 30 range test
     bool i7 = !attrName.empty() && attrName.front() <= 0x1f;                           // expect: 31 range test, hex
     std::string s32(1, static_cast<char>(1));                                          // expect: 32 static_cast<char>(1)
+    bool i8 = !attrName.empty() && ' ' > attrName[0];                                  // expect: 33 reversed range test
+    bool i9 = !attrName.empty() && std::iscntrl(static_cast<unsigned char>(attrName[0]));  // expect: 34 iscntrl
+    char sep = 1;                                                                      // expect: 35 char variable holding 1
+    std::string s35 = attrName; s35.insert(s35.begin(), sep);
     // Accepted: a const char* from a literal, a cast of an escaped key, an
     // integer compared with an element that is not a name.
     const char* lit = "__name__";
@@ -70,4 +74,7 @@ static void probe2(proto::ProtoContext* ctx, const proto::ProtoObject* obj, cons
     bool one = attrName.size() == 1;
     bool printable = !attrName.empty() && attrName[0] >= ' ';
     char c1 = attrName.size() > 1 ? attrName[1] : char(0);
+    bool printable2 = !attrName.empty() && ' ' <= attrName[0];
+    char zero = 0;
+    bool space = !attrName.empty() && std::isspace(static_cast<unsigned char>(attrName[0]));
 }

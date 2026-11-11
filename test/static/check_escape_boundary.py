@@ -14,10 +14,11 @@ call split over several lines is one unit. It fails when a statement
   * re-implements the rule: holds the character U+0001 as a char literal
     ('\\x01', '\\1', '\\001', '\\u0001', ...), or the one-character string
     in any of those spellings (a prefix being built or tested), builds it
-    from an integer (`char(1)`, `(char)1`, `static_cast<char>(1)`), compares
-    the first element of a string (`s[0]`, `.at(0)`, `.front()`, also inside
-    a cast) with the integer 1, or tests it as a control character
-    (`s[0] < ' '`, `< 0x20`, `<= 0x1f`);
+    from an integer (`char(1)`, `(char)1`, `static_cast<char>(1)`) or keeps
+    it in a char variable (`char sep = 1;`), compares the first element of a
+    string (`s[0]`, `.at(0)`, `.front()`, also inside a cast) with the
+    integer 1, or tests it as a control character (`s[0] < ' '`, `< 0x20`,
+    `<= 0x1f`, the reversed `' ' > s[0]`, `std::iscntrl(s[0])`);
   * passes, as an argument of a protoCore attribute call
     (get/set/has/remove/delete...Attribute...), a key made from a run-time
     string: `->asString(...)`, or `getInternedString`, `createSymbol`,
@@ -79,6 +80,14 @@ INT_U1 = re.compile(FIRST + r"\s*\)*\s*(==|!=)\s*(0x0*1|1)\b(?![.\w])"
 # The first character tested as a control character: `n[0] < ' '`,
 # `n[0] < 0x20`, `n[0] <= 0x1f`.
 RANGE_U1 = re.compile(FIRST + r"\s*\)*\s*(<\s*(' '|0x0*20\b|32\b|'\\x20')|<=\s*(0x0*1[fF]\b|31\b))")
+# The same test written the other way round (`' ' > n[0]`, `0x1f >= n[0]`)
+# or through the C library (`std::iscntrl(n[0])`).
+RANGE_U1_REV = re.compile(r"(?<![\w.])(' '|0x0*20\b|32\b|'\\x20')\s*>\s*[\w<>:\s(]*?[A-Za-z_][\w.>-]*" + FIRST
+                          + r"|(?<![\w.])(0x0*1[fF]\b|31\b)\s*>=\s*[\w<>:\s(]*?[A-Za-z_][\w.>-]*" + FIRST)
+ISCNTRL_U1 = re.compile(r"\biscntrl\s*\([^;]*?" + FIRST)
+# A char variable that holds U+0001 (`char sep = 1;`, `unsigned char c{0x01};`),
+# inserted into a name later.
+CHAR_VAR_U1 = re.compile(r"\b(?:(?:un)?signed\s+)?char\s+[A-Za-z_]\w*\s*(?:=\s*|\{\s*|\(\s*)(0x0*1|1)\b(?![.\w])")
 # U+0001 built as a char from an integer: char(1), (char)1, static_cast<char>(0x01).
 CHAR_INT_U1 = re.compile(r"(\bchar\s*\(\s*|\(\s*(?:unsigned\s+)?char\s*\)\s*|static_cast\s*<\s*(?:unsigned\s+)?char\s*>\s*\(\s*)(0x0*1|1)\b(?![.\w])")
 MEMPTR_CALL = re.compile(r"\(\s*[^()]*?(?:->\*|\.\*)\s*([A-Za-z_]\w*)\s*\)\s*\(")
@@ -394,7 +403,8 @@ for path, raw, code in PARSED:
         if marked:
             continue
         if (CHAR_U1.search(stmt) or STR_U1.search(stmt) or INT_U1.search(stmt)
-                or RANGE_U1.search(stmt) or CHAR_INT_U1.search(stmt)):
+                or RANGE_U1.search(stmt) or RANGE_U1_REV.search(stmt) or ISCNTRL_U1.search(stmt)
+                or CHAR_INT_U1.search(stmt) or CHAR_VAR_U1.search(stmt)):
             problems.append(f"{rel}:{first}: escaping rule re-implemented: {stmt[:160]}")
         calls = [m.end() - 1 for m in ATTR_CALL.finditer(stmt)]
         for m in MEMPTR_CALL.finditer(stmt):

@@ -153,9 +153,10 @@ defect and adds a `test/regression/*.py` test registered in
   - `o.__dict__[k] = v` through a fresh `o.__dict__` costs time linear in
     the instance's size per write (a namespace resync per access), so
     filling an instance this way is quadratic overall (2,000 writes: about
-    1.2 s); `popitem()` and `clear()` on a held dict pay the same resync,
-    while `pop`, `setdefault`, `del d[k]`, `update` and `setattr` do not
-    depend on the size;
+    1.2 s); `popitem()` and `clear()` on a held dict pay the same resync;
+    `pop`, `del d[k]`, `update` and item assignment on a held dict are
+    linear in the instance's size per call, while `setattr` and
+    `setdefault` of an existing name are constant;
   - with `__slots__` and `__dict__` together, slot values also appear in
     `vars(o)`.
   A name owned by a data descriptor of the type (property, `__slots__`

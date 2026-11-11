@@ -2352,33 +2352,79 @@ static void instanceDictMirrorSlots(proto::ProtoContext* ctx, PythonEnvironment*
     }
 }
 
-/** Whether the first class in type(owner)'s MRO that defines `attrKey` holds a
- *  data descriptor there (a property, a __slots__ member): attribute reads
- *  then go to the descriptor, never to the instance namespace. */
-static bool typeHasDataDescriptor(proto::ProtoContext* ctx, PythonEnvironment* env,
-                                  const proto::ProtoObject* owner, const proto::ProtoString* attrKey) {
-    const proto::ProtoObject* cls = env->getType(ctx, owner);
-    if (!cls || cls == PROTO_NONE) return false;
+/** The descriptor protocol's view of a class attribute, as CPython's generic
+ *  attribute lookup sees it: `__get__`, `__set__` and `__delete__` come from
+ *  the descriptor's TYPE, never from its own namespace (an instance attribute
+ *  named `__set__` makes nothing a descriptor).  A data descriptor is one
+ *  whose type defines `__set__` or `__delete__`.  The runtime's member
+ *  descriptors (a `__slots__` member, a code-object member) carry their
+ *  native handlers as own attributes and are read there.  The class flags of
+ *  the descriptor's type (PYFLAG_HAS_DATA_DESCR / PYFLAG_HAS_GET_DESCR) skip
+ *  the lookups for the common case, a function or a plain value. */
+struct DescriptorMethods {
+    const proto::ProtoObject* get{nullptr};
+    const proto::ProtoObject* set{nullptr};
+    const proto::ProtoObject* del{nullptr};
+    bool isData() const { return set || del; }
+};
+
+static DescriptorMethods descriptorMethods(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                           const proto::ProtoObject* descr, bool wantDelete = false) {
+    DescriptorMethods m;
+    if (!descr || descr == PROTO_NONE || (reinterpret_cast<uintptr_t>(descr) & 0x3F) != 0) return m;
+    auto present = [](const proto::ProtoObject* v) { return v && v != PROTO_NONE ? v : nullptr; };
+    const proto::ProtoObject* memberProto = env->getMemberDescriptorPrototype();
+    if (memberProto && descr->getFirstParent(ctx) == memberProto) {
+        m.get = present(descr->getOwnAttributeDirect(ctx, env->getGetDunderString()));
+        m.set = present(descr->getOwnAttributeDirect(ctx, env->getSetDunderString()));
+        m.del = present(descr->getOwnAttributeDirect(ctx, env->getDelDunderString()));
+        if (m.get || m.set || m.del) return m;
+    }
+    const proto::ProtoObject* type = env->getType(ctx, descr);
+    if (!type || type == PROTO_NONE || type == descr) return m;
+    // The type's own chain (its MRO for a Python class) answers, through
+    // protoCore's per-thread attribute cache.
+    const uint32_t flags = env->ensureClassFlags(ctx, type);
+    if (flags & PythonEnvironment::PYFLAG_HAS_DATA_DESCR) {
+        m.set = present(type->getAttribute(ctx, env->getSetDunderString()));
+        // `del` is read when it decides something: a delete, or whether a
+        // descriptor without __set__ is a data descriptor.
+        if (!m.set || wantDelete) m.del = present(type->getAttribute(ctx, env->getDelDunderString()));
+    }
+    if (flags & PythonEnvironment::PYFLAG_HAS_GET_DESCR)
+        m.get = present(type->getAttribute(ctx, env->getGetDunderString()));
+    return m;
+}
+
+/** The class attribute `name` of `cls`: the value owned by the first class of
+ *  its MRO that defines it (object and type end the walk), or nullptr. */
+static const proto::ProtoObject* typeAttributeForDescriptor(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                                            const proto::ProtoObject* cls,
+                                                            const proto::ProtoString* name) {
+    if (!cls || cls == PROTO_NONE) return nullptr;
     const proto::ProtoObject* mroObj = env->getAttribute(ctx, cls, env->getMroString(), false);
     ::protoPython::TupleView mro = mroObj ? PythonEnvironment::tupleView(ctx, mroObj) : nullptr;
-    if (!mro) return false;
+    if (!mro) return nullptr;
     for (proto::proto_ulong i = 0; i < mro->getSize(ctx); ++i) {
         const proto::ProtoObject* base = mro->getAt(ctx, static_cast<int>(i));
         if (!base || base == PROTO_NONE) continue;
-        if (base == env->getObjectPrototype() || base == env->getTypePrototype()) return false;
-        if (base->hasOwnAttribute(ctx, attrKey) != PROTO_TRUE) continue;
-        const proto::ProtoObject* descr = base->getOwnAttributeDirect(ctx, attrKey);
-        if (!descr || descr == PROTO_NONE || descr->isString(ctx) || descr->isInteger(ctx)) return false;
-        // As attribute lookup tests it: __set__ on the descriptor (a
-        // __slots__ member carries its own) or on its type (property).
-        const proto::ProtoObject* setM = descr->getAttribute(ctx, env->getSetDunderString());
-        if (setM && setM != PROTO_NONE) return true;
-        const proto::ProtoObject* descrType = env->getType(ctx, descr);
-        if (!descrType || descrType == PROTO_NONE) return false;
-        setM = env->getAttribute(ctx, descrType, env->getSetDunderString(), false);
-        return setM && setM != PROTO_NONE;
+        if (base == env->getObjectPrototype() || base == env->getTypePrototype()) return nullptr;
+        if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) return base->getOwnAttributeDirect(ctx, name);
     }
-    return false;
+    return nullptr;
+}
+
+/** Whether `owner.<attrKey>` is answered by a data descriptor of type(owner)
+ *  whatever the instance namespace holds: the descriptor's type defines
+ *  `__get__` and `__set__` or `__delete__` (a property, a `__slots__`
+ *  member).  A data descriptor without `__get__` (validate on write, read
+ *  from `__dict__`) lets the instance value answer, as in CPython. */
+static bool typeHasDataDescriptor(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                  const proto::ProtoObject* owner, const proto::ProtoString* attrKey) {
+    const proto::ProtoObject* descr = typeAttributeForDescriptor(ctx, env, env->getType(ctx, owner), attrKey);
+    if (!descr) return false;
+    const DescriptorMethods m = descriptorMethods(ctx, env, descr);
+    return m.isData() && m.get;
 }
 
 /** `owner.<name> = value` as a namespace write: mirror and attribute. */
@@ -18726,9 +18772,10 @@ static bool instanceDictMirrorLearn(proto::ProtoContext* context, PythonEnvironm
 
 // instanceDictRefresh for one key: the view's entry for `key` takes the
 // instance's current attribute (or goes, when the instance no longer has
-// one). Cost is independent of the instance's size, so pop, setdefault and
-// del through a held view stay constant-time per call; a non-str key, which
-// is never an attribute, takes the full refresh.
+// one). The refresh itself does not depend on the instance's size, but
+// removing a present key rebuilds the view's key list (dictKeysWithout), so
+// pop and del through a held view are linear in the instance's size per
+// call; a non-str key, which is never an attribute, takes the full refresh.
 static void instanceDictRefreshKey(proto::ProtoContext* context, const proto::ProtoObject* view,
                                    const proto::ProtoObject* key) {
     const proto::ProtoObject* owner = instanceDictOwner(context, view);
@@ -28402,6 +28449,7 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
         if (mroAttr) mroT = ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr);
     }
     const proto::ProtoString* setattrDunderS = getInternedString(ctx, "__setattr__");
+    const proto::ProtoString* descrShadowS = getInternedString(ctx, "\001__pydescr_shadow__");
     auto probe = [&](const proto::ProtoObject* base) {
         if (!base || base == PROTO_NONE) return;
         if (slotsString && base->hasOwnAttribute(ctx, slotsString) == PROTO_TRUE) {
@@ -28415,11 +28463,15 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
         // the fast path for classes that obviously have no descriptors.
         const proto::ProtoString* setS = setDunderString;
         const proto::ProtoString* getS = getDunderString;
-        if (setS && base->hasOwnAttribute(ctx, setS) == PROTO_TRUE) {
+        if ((setS && base->hasOwnAttribute(ctx, setS) == PROTO_TRUE)
+                || (delDunderString && base->hasOwnAttribute(ctx, delDunderString) == PROTO_TRUE)) {
             flags |= PYFLAG_HAS_DATA_DESCR;
         }
         if (getS && base->hasOwnAttribute(ctx, getS) == PROTO_TRUE) {
             flags |= PYFLAG_HAS_GET_DESCR;
+        }
+        if (base->hasOwnAttribute(ctx, descrShadowS) == PROTO_TRUE) {
+            flags |= PYFLAG_DESCR_SHADOW;
         }
         // PYFLAG_HAS_CUSTOM_GETATTR: ignore the built-in defaults
         // installed on object/type — only user-supplied overrides count.
@@ -29004,7 +29056,7 @@ static const proto::ProtoObject* tryFastGetAttribute(
         if (objType && objType != PROTO_NONE) {
             uint32_t typeFlags = const_cast<PythonEnvironment*>(env)
                 ->ensureClassFlags(ctx, objType);
-            if (typeFlags & PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR) {
+            if (env->instanceReadNeedsFullLookup(ctx, objType, typeFlags, name)) {
                 return nullptr;
             }
         }
@@ -29670,7 +29722,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     // PI: data descriptors take precedence over instance attributes.
-    // Walk type's MRO for a descriptor with __set__ (data descriptor);
+    // Walk type's MRO for a descriptor with __set__ or __delete__;
     // if found, invoke its __get__ regardless of what's in the instance
     // dict.  Mirrors CPython's MRO-then-instance-dict resolution order
     // for data descriptors.
@@ -29691,42 +29743,28 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 if (base == objectPrototype || base == typePrototype) break;
                 if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
                     const proto::ProtoObject* descr = base->getOwnAttributeDirect(ctx, name);
-                    if (descr && descr != PROTO_NONE) {
-                        // Look for __set__ on the descriptor (data descriptor marker).
-                        const proto::ProtoString* setS = setDunderString
-                            ? setDunderString : PythonEnvironment::getInternedString(ctx, "__set__");
-                        const proto::ProtoObject* descrType = getType(ctx, descr);
-                        const proto::ProtoObject* setM = descr->getAttribute(ctx, setS);
-                        if ((!setM || setM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
-                            setM = getAttribute(ctx, descrType, setS, false);
-                        }
-                        if (setM && setM != PROTO_NONE) {
-                            // Data descriptor — invoke __get__ now.
-                            const proto::ProtoString* getS = getDunderString
-                                ? getDunderString : PythonEnvironment::getInternedString(ctx, "__get__");
-                            const proto::ProtoObject* getM = descr->getAttribute(ctx, getS);
-                            if ((!getM || getM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
-                                getM = getAttribute(ctx, descrType, getS, false);
-                            }
-                            if (getM && getM != PROTO_NONE) {
+                    // A data descriptor: its type defines __set__ or
+                    // __delete__ (descriptorMethods).  With __get__ it
+                    // answers; without, the instance's own value does when
+                    // there is one, else the descriptor itself (CPython).
+                    const DescriptorMethods dm = descriptorMethods(ctx, this, descr);
+                    if (dm.isData()) {
+                        if (dm.get) {
+                            if (dm.get->asMethod(ctx)) {
                                 const proto::ProtoList* getArgs =
                                     ctx->newList()->appendLast(ctx, obj)
                                                   ->appendLast(ctx, objClass);
-                                if (getM->asMethod(ctx)) {
-                                    return getM->asMethod(ctx)(ctx,
-                                        const_cast<proto::ProtoObject*>(descr), nullptr,
-                                        argsView(proto::ProtoListArguments(ctx, getArgs)), nullptr);
-                                }
-                                const proto::ProtoList* fullArgs =
-                                    ctx->newList()->appendLast(ctx, descr)
-                                                  ->appendLast(ctx, obj)
-                                                  ->appendLast(ctx, objClass);
-                                return invokePythonCallable(ctx, getM, fullArgs, nullptr);
+                                return dm.get->asMethod(ctx)(ctx,
+                                    const_cast<proto::ProtoObject*>(descr), nullptr,
+                                    argsView(proto::ProtoListArguments(ctx, getArgs)), nullptr);
                             }
-                            // Has __set__ but no __get__: still data descriptor;
-                            // return the descriptor itself.
-                            return descr;
+                            const proto::ProtoList* fullArgs =
+                                ctx->newList()->appendLast(ctx, descr)
+                                              ->appendLast(ctx, obj)
+                                              ->appendLast(ctx, objClass);
+                            return invokePythonCallable(ctx, dm.get, fullArgs, nullptr);
                         }
+                        if (obj->hasOwnAttribute(ctx, name) != PROTO_TRUE) return descr;
                     }
                     break;  // found in MRO, but not data descriptor — stop walk
                 }
@@ -30302,11 +30340,13 @@ bool PythonEnvironment::deleteAttribute(proto::ProtoContext* ctx, const proto::P
         }
     }
     if (descr && descr != PROTO_NONE) {
-        const proto::ProtoString* delS = PythonEnvironment::getInternedString(ctx, "__delete__");
-        const proto::ProtoObject* delM = descr->getAttribute(ctx, delS);
-        const proto::ProtoObject* descrType = getType(ctx, descr);
-        if ((!delM || delM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
-            delM = getAttribute(ctx, descrType, delS, false);
+        // __delete__ from the descriptor's type (descriptorMethods); a data
+        // descriptor with only __set__ refuses the delete, as in CPython.
+        const DescriptorMethods dm = descriptorMethods(ctx, this, descr, /*wantDelete=*/true);
+        const proto::ProtoObject* delM = dm.del;
+        if (!delM && dm.set) {
+            raiseAttributeErrorWithMessage(ctx, descr, "__delete__", "__delete__");
+            return false;
         }
         if (delM && delM != PROTO_NONE) {
             if (delM->asMethod(ctx)) {
@@ -30395,10 +30435,34 @@ void PythonEnvironment::classAttributeChanged(proto::ProtoContext* ctx, const pr
     if (!pyFlagsString_ || !cls || cls == PROTO_NONE || !name) return;
     // Pointer comparisons first: this runs on every attribute store.
     const bool relevant = name == getattributeDunderString || name == strString || name == reprString
-        || name == setDunderString || name == getDunderString || name == getattrDunderString
+        || name == setDunderString || name == getDunderString || name == delDunderString
+        || name == getattrDunderString
         || name == slotsString || name == basesString || name == mroString
         || name == getInternedString(ctx, "__setattr__");
     if (!relevant || !isActuallyAClass(ctx, cls)) return;
+    dropClassFlags(ctx, cls);
+}
+
+bool PythonEnvironment::instanceReadNeedsFullLookup(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
+                                                    uint32_t flags, const proto::ProtoString* name) {
+    if (flags & PYFLAG_HAS_CUSTOM_GETATTR) return true;
+    if (!(flags & PYFLAG_DESCR_SHADOW) || !cls || cls == PROTO_NONE || !name) return false;
+    // One chain lookup (the per-thread attribute cache answers repeats):
+    // only a name a data descriptor governs is read through the full path.
+    const proto::ProtoObject* d = cls->getAttribute(ctx, name);
+    if (!d || d == PROTO_NONE || (reinterpret_cast<uintptr_t>(d) & 0x3F) != 0) return false;
+    return descriptorMethods(ctx, this, d).isData();
+}
+
+void PythonEnvironment::markDataDescriptorShadow(proto::ProtoContext* ctx, const proto::ProtoObject* cls) {
+    if (!pyFlagsString_ || !cls || cls == PROTO_NONE || !isActuallyAClass(ctx, cls)) return;
+    const proto::ProtoString* markS = getInternedString(ctx, "\001__pydescr_shadow__");
+    if (cls->hasOwnAttribute(ctx, markS) != PROTO_TRUE)
+        const_cast<proto::ProtoObject*>(cls)->proto::ProtoObject::setAttribute(ctx, markS, PROTO_TRUE);
+    dropClassFlags(ctx, cls);
+}
+
+void PythonEnvironment::dropClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls) {
     const proto::ProtoString* subL = getInternedString(ctx, "\001__subclasses_list__");
     std::vector<const proto::ProtoObject*> pending{cls};
     std::unordered_set<const proto::ProtoObject*> seen;
@@ -31185,6 +31249,9 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         // silent clobber of any inner re-entrant write).  Return
         // obj now to skip the rest of the function for __bases__.
         classAttributeChanged(ctx, obj, basesString);
+        // The new bases may bring data descriptors over names that existing
+        // instances own.
+        markDataDescriptorShadow(ctx, obj);
         return obj;
     }
 
@@ -31300,35 +31367,32 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 isImmutablePrim = true; primName = "complex";
             } else if (obj->isString(ctx)) {
                 isImmutablePrim = true; primName = "str";
-            } else if (::protoPython::PythonEnvironment::isTupleValue(ctx, obj)) {
+            } else if (::protoPython::PythonEnvironment::isTupleValue(ctx, obj) && tp == tuplePrototype) {
+                // A tuple subclass instance goes to the class checks below.
                 isImmutablePrim = true; primName = "tuple";
             }
         }
         if (isImmutablePrim) {
-            std::string msg = std::string("__class__ assignment only supported for mutable types or ModuleType subclasses; cannot reassign on '")
-                + (primName ? primName : "?") + "' instance";
-            raiseTypeError(ctx, msg);
+            (void)primName;
+            raiseTypeError(ctx, "__class__ assignment only supported for mutable types or ModuleType subclasses");
             return nullptr;
         }
-        // CPython rejects __class__ assignment when either the source
-        // or target involves a built-in container/type that's not
-        // layout-compatible with the other side.  Without per-type
-        // layout introspection, the safest CPython-compatible rule is:
-        // reject any __class__ swap whose origin OR destination is a
-        // built-in primitive prototype (list/dict/set/object/type),
-        // and reject swaps between built-in and user classes (heap
-        // type ↔ static type) per CPython's tp_flags check.
+        // CPython's object_set_class: the value must be a class; neither the
+        // old nor the new class may be an immutable (built-in, static) type
+        // unless both are ModuleType subclasses; and the two layouts must be
+        // compatible (compatible_for_assignment).
         {
-            const proto::ProtoObject* srcType = getType(ctx, obj);
+            // The exact class: an instance of a subclass of a built-in type
+            // pins it as its own __class__ (getType folds some to the
+            // built-in type).
+            const proto::ProtoObject* srcType = nullptr;
+            if (obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0
+                    && obj->hasOwnAttribute(ctx, classString) == PROTO_TRUE) {
+                const proto::ProtoObject* own = obj->getOwnAttributeDirect(ctx, classString);
+                if (own && own != PROTO_NONE && isActuallyAClass(ctx, own)) srcType = own;
+            }
+            if (!srcType) srcType = getType(ctx, obj);
             const proto::ProtoObject* dstType = value;
-            auto isBuiltinTypeMarker = [&](const proto::ProtoObject* t) -> bool {
-                if (!t) return false;
-                return t == listPrototype || t == dictPrototype
-                    || t == setPrototype || t == objectPrototype
-                    || t == typePrototype;
-            };
-            bool srcIsBuiltin = isBuiltinTypeMarker(srcType);
-            bool dstIsBuiltin = isBuiltinTypeMarker(dstType);
             // dst must be a class object at all.  Probe widely so
             // both heap types (user classes via __is_python_class__),
             // built-in prototypes (modulePrototype, listPrototype…),
@@ -31349,69 +31413,63 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                         || dstType == floatPrototype || dstType == boolPrototype
                         || dstType == complexPrototype || dstType == objectPrototype
                         || dstType == modulePrototype || dstType == nonePrototype
-                        || dstType == methodPrototype) {
+                        || dstType == methodPrototype || immutableBuiltinTypes_.count(dstType)) {
                         dstIsClass = true;
                     }
                 }
                 // type(dstType) == type also identifies a class.
-                if (!dstIsClass) {
+                if (!dstIsClass && !dstType->isInteger(ctx) && !dstType->isString(ctx)
+                        && !dstType->isBoolean(ctx) && !dstType->isFloat(ctx)) {
                     const proto::ProtoObject* meta = getType(ctx, dstType);
                     if (meta == typePrototype) dstIsClass = true;
                 }
             }
             if (!dstIsClass) {
-                std::string msg = "__class__ must be set to a class, not '";
-                if (dstType) {
-                    const proto::ProtoObject* nm = dstType->getAttribute(ctx, getNameString());
-                    std::string n = "?";
-                    if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, n);
-                    msg += n;
-                }
-                msg += "' instance";
-                raiseTypeError(ctx, msg);
+                raiseTypeError(ctx, "__class__ must be set to a class, not '"
+                    + PythonEnvironment::typeNameOf(ctx, dstType ? dstType : PROTO_NONE) + "' object");
                 return nullptr;
             }
-            if (srcIsBuiltin || dstIsBuiltin) {
-                if (srcType != dstType) {
-                    std::string sName = "?", dName = "?";
-                    if (srcType) {
-                        const proto::ProtoObject* nm = srcType->getAttribute(ctx, getNameString());
-                        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, sName);
-                    }
-                    if (dstType) {
-                        const proto::ProtoObject* nm = dstType->getAttribute(ctx, getNameString());
-                        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, dName);
-                    }
-                    raiseTypeError(ctx,
-                        "__class__ assignment: '" + sName + "' object layout differs from '" + dName + "'");
-                    return nullptr;
-                }
+            const proto::ProtoString* mroS_layout = getMroString();
+            auto mroOf = [&](const proto::ProtoObject* cls) -> ::protoPython::TupleView {
+                const proto::ProtoObject* m = (cls && cls != PROTO_NONE) ? getAttribute(ctx, cls, mroS_layout, false) : nullptr;
+                return m ? ::protoPython::PythonEnvironment::tupleView(ctx, m) : nullptr;
+            };
+            auto inMro = [&](const proto::ProtoObject* cls, const proto::ProtoObject* target) -> bool {
+                if (!cls || !target) return false;
+                if (cls == target) return true;
+                ::protoPython::TupleView mroT = mroOf(cls);
+                const proto::proto_ulong n = mroT ? mroT->getSize(ctx) : 0;
+                for (proto::proto_ulong i = 0; i < n; ++i)
+                    if (mroT->getAt(ctx, static_cast<int>(i)) == target) return true;
+                return false;
+            };
+            // A static (built-in) type: one the builtins module exposes, or
+            // any class that is not a heap (Python-defined) class.
+            auto isStaticType = [&](const proto::ProtoObject* t) -> bool {
+                if (!t || t == PROTO_NONE) return true;
+                if (immutableBuiltinTypes_.count(t)) return true;
+                return !isPythonClassString || t->hasOwnAttribute(ctx, isPythonClassString) != PROTO_TRUE;
+            };
+            const bool bothModules = modulePrototype && inMro(srcType, modulePrototype) && inMro(dstType, modulePrototype);
+            if (!bothModules && (isStaticType(srcType) || isStaticType(dstType))) {
+                raiseTypeError(ctx, "__class__ assignment only supported for mutable types or ModuleType subclasses");
+                return nullptr;
             }
-            // STRUCT-226: CPython's compatible_for_assignment check
-            // for user classes.  Mirror its solid_base approach:
-            //
-            //   compatible_with_tp_base(T): True iff T adds no real
-            //     ivars over its base — i.e. T has no own __slots__
-            //     (implicit __dict__/__weakref__ only) or its __slots__
-            //     contains only __dict__/__weakref__.
-            //
-            //   solid_base(T): the first class in T's MRO whose
-            //     compatible_with_tp_base is False; object if none.
-            //
-            //   Two types are layout-compatible iff
-            //     solid_base(src) == solid_base(dst), OR
-            //     parent_solid_base(solid_base(src)) == parent_solid_base(solid_base(dst))
-            //       AND they add the same number of real slots.
-            //
-            // This correctly accepts G↔H (same parent object, same
-            // slot count) and Q↔R (both solid_base = J), while
-            // rejecting L↔M (their solid_bases share neither identity
-            // nor parent).
-            if (!srcIsBuiltin && !dstIsBuiltin && srcType != dstType
-                && srcType && dstType
+            // STRUCT-226: CPython's compatible_for_assignment.  Each side
+            // walks up its tp_base (__base__) while the class shares its
+            // base's layout (compatible_with_tp_base: no real __slots__, no
+            // __dict__ or weakref slot the base lacks; a built-in exception
+            // built on its base's struct).  The classes reached must be the
+            // same, or two heap classes on the same tp_base adding the same
+            // slots (same_slots_added).  So two plain classes, two list
+            // subclasses or two Exception subclasses swap, while a list
+            // subclass and a dict subclass, an Exception subclass and a
+            // ValueError subclass (their __weakref__ slot is their own
+            // layout over different bases), or classes with different
+            // __slots__ do not.
+            if (srcType != dstType && srcType && dstType
                 && srcType != PROTO_NONE && dstType != PROTO_NONE) {
                 const proto::ProtoString* slotsS = getSlotsString();
-                const proto::ProtoString* mroS_layout = getMroString();
                 if (slotsS && mroS_layout) {
                     auto getSlotsOf = [&](const proto::ProtoObject* cls,
                                           bool& hasDict, bool& hasWeakref,
@@ -31440,40 +31498,73 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                         getSlotsOf(cls, hd, hw, rc);
                         return rc;
                     };
-                    // A class is "transparent" iff it adds no real
-                    // slots over its base — own __slots__ is missing
-                    // or contains only __dict__/__weakref__.
-                    auto isTransparent = [&](const proto::ProtoObject* cls) -> bool {
-                        if (!cls || cls == PROTO_NONE) return true;
-                        if (cls == objectPrototype) return true;
-                        return countRealSlots(cls) == 0;
+                    // CPython's compatible_with_tp_base / solid base walk.
+                    // tp_base: a class's __base__ (a built-in type: the next
+                    // MRO entry).
+                    auto mroNext = [&](const proto::ProtoObject* cls) -> const proto::ProtoObject* {
+                        ::protoPython::TupleView mroT = mroOf(cls);
+                        if (mroT && mroT->getSize(ctx) > 1) return mroT->getAt(ctx, 1);
+                        return objectPrototype;
+                    };
+                    auto baseOf = [&](const proto::ProtoObject* cls) -> const proto::ProtoObject* {
+                        if (!cls || cls == PROTO_NONE || cls == objectPrototype) return nullptr;
+                        if (!isStaticType(cls)) {
+                            const proto::ProtoObject* b = getAttribute(ctx, cls, getInternedString(ctx, "__base__"), false);
+                            if (b && b != PROTO_NONE && isActuallyAClass(ctx, b)) return b;
+                        }
+                        return mroNext(cls);
+                    };
+                    auto builtinNamed = [&](const char* n) -> const proto::ProtoObject* {
+                        return builtinsModule ? builtinsModule->getOwnAttributeDirect(ctx, getInternedString(ctx, n)) : nullptr;
+                    };
+                    const proto::ProtoObject* baseExc = builtinNamed("BaseException");
+                    auto isException = [&](const proto::ProtoObject* cls) {
+                        return baseExc && baseExc != PROTO_NONE && inMro(cls, baseExc);
+                    };
+                    // Whether instances of `cls` have a __dict__ / a weakref
+                    // slot (tp_dictoffset / tp_weaklistoffset).
+                    std::function<void(const proto::ProtoObject*, bool&, bool&)> dictWeak =
+                        [&](const proto::ProtoObject* cls, bool& d, bool& w) {
+                        d = false; w = false;
+                        if (!cls || cls == PROTO_NONE || cls == objectPrototype) return;
+                        if (isStaticType(cls)) {
+                            const bool exc = isException(cls);
+                            d = exc || cls == modulePrototype || cls == typePrototype
+                                || cls == getFunctionPrototype();
+                            w = cls == setPrototype || cls == frozensetPrototype || cls == modulePrototype
+                                || cls == typePrototype || cls == getFunctionPrototype();
+                            return;
+                        }
+                        dictWeak(baseOf(cls), d, w);
+                        if (cls->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE) { d = true; w = true; return; }
+                        bool hd = false, hw = false; size_t rc = 0;
+                        getSlotsOf(cls, hd, hw, rc);
+                        d = d || hd; w = w || hw;
+                    };
+                    // A class shares its tp_base's layout: a heap class
+                    // without real slots that adds no __dict__/weakref, or a
+                    // built-in exception that CPython builds on its base's
+                    // struct (every one but those with fields of their own).
+                    auto compatibleWithBase = [&](const proto::ProtoObject* cls) -> bool {
+                        const proto::ProtoObject* base = baseOf(cls);
+                        if (!base) return false;
+                        if (isStaticType(cls)) {
+                            if (!isException(cls)) return false;
+                            for (const char* n : {"BaseException", "BaseExceptionGroup", "StopIteration", "SystemExit",
+                                                  "ImportError", "OSError", "SyntaxError", "AttributeError",
+                                                  "NameError", "UnicodeError"})
+                                if (cls == builtinNamed(n)) return false;
+                            return true;
+                        }
+                        if (countRealSlots(cls) != 0) return false;
+                        bool cd, cw, bd, bw;
+                        dictWeak(cls, cd, cw);
+                        dictWeak(base, bd, bw);
+                        return cd == bd && cw == bw;
                     };
                     auto solidBase = [&](const proto::ProtoObject* cls) -> const proto::ProtoObject* {
-                        const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroS_layout, false);
-                        ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
-                        proto::proto_ulong n = mroT ? mroT->getSize(ctx) : 0;
-                        for (proto::proto_ulong i = 0; i < n; ++i) {
-                            const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
-                            if (!base || base == PROTO_NONE) continue;
-                            if (!isTransparent(base)) return base;
-                        }
-                        return objectPrototype;
-                    };
-                    auto parentSolidBase = [&](const proto::ProtoObject* cls) -> const proto::ProtoObject* {
-                        if (cls == objectPrototype || !cls) return objectPrototype;
-                        const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroS_layout, false);
-                        ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
-                        proto::proto_ulong n = mroT ? mroT->getSize(ctx) : 0;
-                        for (proto::proto_ulong i = 0; i + 1 < n; ++i) {
-                            if (mroT->getAt(ctx, static_cast<int>(i)) == cls) {
-                                for (proto::proto_ulong j = i + 1; j < n; ++j) {
-                                    const proto::ProtoObject* nb = mroT->getAt(ctx, static_cast<int>(j));
-                                    if (nb && nb != PROTO_NONE && !isTransparent(nb)) return nb;
-                                }
-                                return objectPrototype;
-                            }
-                        }
-                        return objectPrototype;
+                        for (int guard = 0; cls && guard < 256 && compatibleWithBase(cls); ++guard) cls = baseOf(cls);
+                        return cls ? cls : objectPrototype;
                     };
                     // CPython tracks per-instance dict / weakref via
                     // tp_dictoffset / tp_weaklistoffset.  Aggregate
@@ -31484,8 +31575,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     auto layoutOf = [&](const proto::ProtoObject* cls,
                                         bool& outHasDict, bool& outHasWeakref) {
                         outHasDict = false; outHasWeakref = false;
-                        const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroS_layout, false);
-                        ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
+                        ::protoPython::TupleView mroT = mroOf(cls);
                         proto::proto_ulong n = mroT ? mroT->getSize(ctx) : 0;
                         for (proto::proto_ulong i = 0; i < n; ++i) {
                             const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
@@ -31510,9 +31600,15 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     const proto::ProtoObject* sbSrc = solidBase(srcType);
                     const proto::ProtoObject* sbDst = solidBase(dstType);
                     bool compatible = (sbSrc == sbDst);
-                    if (!compatible) {
-                        compatible = (parentSolidBase(sbSrc) == parentSolidBase(sbDst))
-                                  && (countRealSlots(sbSrc) == countRealSlots(sbDst));
+                    // same_slots_added: two heap classes on the same
+                    // tp_base adding the same slots (names checked below).
+                    if (!compatible && !isStaticType(sbSrc) && !isStaticType(sbDst)) {
+                        bool sd, sw, dd, dw;
+                        dictWeak(sbSrc, sd, sw);
+                        dictWeak(sbDst, dd, dw);
+                        compatible = baseOf(sbSrc) == baseOf(sbDst)
+                                  && countRealSlots(sbSrc) == countRealSlots(sbDst)
+                                  && sd == dd && sw == dw;
                     }
                     // Layout offsets must match too.
                     if (compatible) {
@@ -31527,8 +31623,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     if (compatible) {
                         auto aggregateNames = [&](const proto::ProtoObject* cls) -> std::unordered_set<std::string> {
                             std::unordered_set<std::string> out;
-                            const proto::ProtoObject* mroAttr = getAttribute(ctx, cls, mroS_layout, false);
-                            ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(ctx, mroAttr) : nullptr;
+                            ::protoPython::TupleView mroT = mroOf(cls);
                             proto::proto_ulong n = mroT ? mroT->getSize(ctx) : 0;
                             for (proto::proto_ulong i = 0; i < n; ++i) {
                                 const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
@@ -31557,13 +31652,14 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                         }
                     }
                     if (!compatible) {
+                        // CPython names the new class first.
                         std::string sName = "?", dName = "?";
                         const proto::ProtoObject* snm = srcType->getAttribute(ctx, getNameString());
                         if (snm && snm->isString(ctx)) snm->asString(ctx)->toUTF8String(ctx, sName);
                         const proto::ProtoObject* dnm = dstType->getAttribute(ctx, getNameString());
                         if (dnm && dnm->isString(ctx)) dnm->asString(ctx)->toUTF8String(ctx, dName);
                         raiseTypeError(ctx,
-                            "__class__ assignment: '" + sName + "' object layout differs from '" + dName + "'");
+                            "__class__ assignment: '" + dName + "' object layout differs from '" + sName + "'");
                         return nullptr;
                     }
                 }
@@ -32099,24 +32195,21 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         bool descrIsCell = descr && descr != PROTO_NONE &&
                            (reinterpret_cast<uintptr_t>(descr) & 0x3F) == 0;
         if (descrIsCell) {
-            // Look up __set__ on the descriptor's type (avoid binding
-            // descr itself as `self`).  Both the descriptor instance
-            // and its type are checked so native (e.g. property) and
-            // Python-defined (class with `def __set__`) descriptors
-            // work uniformly.
-            const proto::ProtoObject* setM = descr->getAttribute(ctx, setDunderString);
-            const proto::ProtoObject* descrType = getType(ctx, descr);
+            // The descriptor protocol (descriptorMethods): __set__ from the
+            // descriptor's type, called with (descr, obj, value).  A data
+            // descriptor with only __delete__ refuses the write, as
+            // CPython's slot_tp_descr_set does.
+            const DescriptorMethods dm = descriptorMethods(ctx, this, descr);
             if (protoPython::diagSetEnabled()) {
-                fprintf(stderr, "[setAttribute] descr=%p setM=%p descrType=%p\n",
-                    (void*)descr, (void*)setM, (void*)descrType);
+                fprintf(stderr, "[setAttribute] descr=%p setM=%p delM=%p\n",
+                    (void*)descr, (void*)dm.set, (void*)dm.del);
             }
-            if ((!setM || setM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
-                setM = getAttribute(ctx, descrType, setDunderString, false);
-                if (protoPython::diagSetEnabled()) {
-                    fprintf(stderr, "[setAttribute] after type lookup setM=%p\n", (void*)setM);
-                }
+            if (!dm.set && dm.del) {
+                raiseAttributeErrorWithMessage(ctx, descr, "__set__", "__set__");
+                return nullptr;
             }
-            if (setM && setM != PROTO_NONE) {
+            if (dm.set) {
+                const proto::ProtoObject* setM = dm.set;
                 if (setM->asMethod(ctx)) {
                     // Native method (e.g. property's __set__)
                     setM->asMethod(ctx)(ctx, descr, nullptr,
@@ -32141,6 +32234,18 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // subclasses do not reference yet.
     classAttributeChanged(ctx, res, name);
     if (res != obj) classAttributeChanged(ctx, obj, name);
+    // A data descriptor with __get__ stored on an existing class: instances
+    // made before may own the name, and the descriptor must answer them
+    // (CPython's precedence).  The class is marked so instance reads take
+    // the full lookup (PYFLAG_DESCR_SHADOW).  A class body's descriptors are
+    // not stored through here.
+    if (objIsClass && (reinterpret_cast<uintptr_t>(value) & 0x3F) == 0 && value != PROTO_NONE) {
+        const DescriptorMethods dm = descriptorMethods(ctx, this, value);
+        if (dm.isData() && dm.get) {
+            markDataDescriptorShadow(ctx, res);
+            if (res != obj) markDataDescriptorShadow(ctx, obj);
+        }
+    }
 
     // Sync to __dict__ if it exists (for built-in types and Python classes).
     // Short-circuit: check __data__ first; only look up __keys__ when __data__
@@ -33900,7 +34005,8 @@ bool PythonEnvironment::ownAttributeFast(proto::ProtoContext* ctx, const proto::
     const proto::ProtoObject* own = obj->getOwnAttributeDirect(ctx, key);
     if (!own || own == PROTO_NONE || own->isMethod(ctx)) return false;
     const proto::ProtoObject* objType = getType(ctx, obj);
-    if (!objType || objType == PROTO_NONE || (ensureClassFlags(ctx, objType) & PYFLAG_HAS_CUSTOM_GETATTR)) return false;
+    if (!objType || objType == PROTO_NONE
+            || instanceReadNeedsFullLookup(ctx, objType, ensureClassFlags(ctx, objType), key)) return false;
     if ((reinterpret_cast<uintptr_t>(own) & 0x3F) == 0) {
         const proto::ProtoObject* ownType = own->getFirstParent(ctx);
         if (ownType == getFunctionPrototype()) return false;

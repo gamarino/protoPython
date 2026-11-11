@@ -1310,6 +1310,13 @@ public:
      *  of an int/float subclass must call them. Invalidated when a class
      *  gains __str__ or __repr__. */
     static constexpr uint32_t PYFLAG_HAS_CUSTOM_STR        = 1u << 7;
+    /** A data descriptor with __get__ was stored on some MRO entry after the
+     *  class was created (or its __bases__ changed): an instance may own an
+     *  attribute that the descriptor now governs, so an instance read of a
+     *  name a data descriptor governs takes the full lookup, which asks the
+     *  descriptor first (instanceReadNeedsFullLookup).  Sticky: the entry
+     *  keeps its marker (markDataDescriptorShadow). */
+    static constexpr uint32_t PYFLAG_DESCR_SHADOW          = 1u << 8;
     static constexpr uint32_t PYFLAG_COMPUTED              = 1u << 31;
 
     /** Fast read of cached flags; returns 0 when not yet computed. */
@@ -1317,8 +1324,19 @@ public:
 
     /** Compute (if absent) and return cached flags for `cls`. */
     uint32_t ensureClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
+    /** Whether a read of `name` on an instance of `cls` (class flags
+     *  `flags`) must take the full lookup instead of answering with an own
+     *  attribute: the class overrides __getattribute__, or it is marked
+     *  PYFLAG_DESCR_SHADOW and its chain holds a data descriptor `name`. */
+    bool instanceReadNeedsFullLookup(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
+                                     uint32_t flags, const proto::ProtoString* name);
+    /** Marks `cls` (PYFLAG_DESCR_SHADOW) after a data descriptor reached its
+     *  MRO late, and drops the cached flags of it and its subclasses. */
+    void markDataDescriptorShadow(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
     void classAttributeChanged(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
                                const proto::ProtoString* name);
+    /** Drops the cached flags of `cls` and of every transitive subclass. */
+    void dropClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
 
     const proto::ProtoString* getGetattrDunderString() const { return getattrDunderString; }
     const proto::ProtoString* getGetattributeDunderString() const { return getattributeDunderString; }

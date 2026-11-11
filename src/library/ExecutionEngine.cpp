@@ -8414,8 +8414,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             && attrName != env->getGetattributeDunderString()) {
                         const proto::ProtoObject* cls = env->getType(ctx, obj);
                         if (cls && cls != PROTO_NONE && cls != obj
-                                && !(env->ensureClassFlags(ctx, cls)
-                                     & protoPython::PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR)) {
+                                && !env->instanceReadNeedsFullLookup(ctx, cls, env->ensureClassFlags(ctx, cls), attrName)) {
                             const proto::ProtoObject* v = obj->getAttribute(ctx, attrName);  // raw-key: a compiler-made name (an identifier: no U+0001)
                             bool plain = proto::isSmallInt(v) || proto::ProtoObject::isStringTagFast(v)
                                       || v == PROTO_TRUE || v == PROTO_FALSE;
@@ -8496,8 +8495,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             const proto::ProtoObject* objType = env->getType(ctx, obj);
                             if (objType && objType != PROTO_NONE) {
                                 uint32_t typeFlags = env->ensureClassFlags(ctx, objType);
-                                hasCustomGetattr = (typeFlags
-                                    & protoPython::PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR) != 0;
+                                hasCustomGetattr = env->instanceReadNeedsFullLookup(ctx, objType, typeFlags, attrName);
                             }
                         }
                         if (!isSynthDunder && !hasCustomGetattr) {
