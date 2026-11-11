@@ -2421,6 +2421,10 @@ static const proto::ProtoObject* typeAttributeForDescriptor(proto::ProtoContext*
  *  from `__dict__`) lets the instance value answer, as in CPython. */
 static bool typeHasDataDescriptor(proto::ProtoContext* ctx, PythonEnvironment* env,
                                   const proto::ProtoObject* owner, const proto::ProtoString* attrKey) {
+    // object's own __class__ and __dict__ are data descriptors (CPython):
+    // a namespace entry under either name never becomes the object's class
+    // or storage.
+    if (attrKey == env->getClassString() || attrKey == env->getDictDunderString()) return true;
     const proto::ProtoObject* descr = typeAttributeForDescriptor(ctx, env, env->getType(ctx, owner), attrKey);
     if (!descr) return false;
     const DescriptorMethods m = descriptorMethods(ctx, env, descr);
@@ -28497,6 +28501,13 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
         }
     }
     if (noDictBuiltinTypes_.count(cls) || builtinTypeParents_.count(cls)) flags |= PYFLAG_NO_FAST_STORE;
+    {
+        const proto::ProtoString* subL = getInternedString(ctx, "\001__subclasses_list__");
+        const proto::ProtoObject* subs = cls->hasOwnAttribute(ctx, subL) == PROTO_TRUE
+            ? cls->getOwnAttributeDirect(ctx, subL) : nullptr;
+        const proto::ProtoList* sl = subs ? ::protoPython::listStorage(ctx, subs) : nullptr;
+        if (sl && sl->getSize(ctx) > 0) flags |= PYFLAG_HAS_SUBCLASSES;
+    }
 
     // Publish.  Use the protoCore setAttribute directly — bypass the
     // env-level descriptor / slots dispatch, since this is internal
@@ -30457,9 +30468,17 @@ bool PythonEnvironment::instanceReadNeedsFullLookup(proto::ProtoContext* ctx, co
 void PythonEnvironment::markDataDescriptorShadow(proto::ProtoContext* ctx, const proto::ProtoObject* cls) {
     if (!pyFlagsString_ || !cls || cls == PROTO_NONE || !isActuallyAClass(ctx, cls)) return;
     const proto::ProtoString* markS = getInternedString(ctx, "\001__pydescr_shadow__");
-    if (cls->hasOwnAttribute(ctx, markS) != PROTO_TRUE)
-        const_cast<proto::ProtoObject*>(cls)->proto::ProtoObject::setAttribute(ctx, markS, PROTO_TRUE);
+    // Already marked: the flags of the class and of every subclass computed
+    // since include the mark (ensureClassFlags reads it along the MRO).
+    if (cls->hasOwnAttribute(ctx, markS) == PROTO_TRUE) return;
+    const_cast<proto::ProtoObject*>(cls)->proto::ProtoObject::setAttribute(ctx, markS, PROTO_TRUE);
     dropClassFlags(ctx, cls);
+}
+
+void PythonEnvironment::dropOwnClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls) {
+    if (!pyFlagsString_ || !cls || cls == PROTO_NONE || (reinterpret_cast<uintptr_t>(cls) & 0x3F) != 0) return;
+    if (cls->hasOwnAttribute(ctx, pyFlagsString_) == PROTO_TRUE)
+        const_cast<proto::ProtoObject*>(cls)->removeAttribute(ctx, pyFlagsString_);
 }
 
 void PythonEnvironment::dropClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls) {
@@ -31239,6 +31258,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 if (!already) {
                     curList = curList->appendLast(ctx, obj);
                     const_cast<proto::ProtoObject*>(nb)->setAttribute(ctx, subListS, curList->asObject(ctx));
+                    dropOwnClassFlags(ctx, nb);  // PYFLAG_HAS_SUBCLASSES
                 }
             }
         }
@@ -31365,7 +31385,8 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 isImmutablePrim = true; primName = "frozenset";
             } else if (complexPrototype && tp == complexPrototype) {
                 isImmutablePrim = true; primName = "complex";
-            } else if (obj->isString(ctx)) {
+            } else if (obj->isString(ctx) && (tp == strPrototype || !tp || tp == PROTO_NONE)) {
+                // A str subclass instance goes to the class checks below.
                 isImmutablePrim = true; primName = "str";
             } else if (::protoPython::PythonEnvironment::isTupleValue(ctx, obj) && tp == tuplePrototype) {
                 // A tuple subclass instance goes to the class checks below.
@@ -31385,13 +31406,21 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // The exact class: an instance of a subclass of a built-in type
             // pins it as its own __class__ (getType folds some to the
             // built-in type).
-            const proto::ProtoObject* srcType = nullptr;
-            if (obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0
+            // Only for a receiver whose getType is such a built-in type and
+            // whose pinned class derives from it: an instance-namespace
+            // entry named __class__ is not the object's class.
+            const proto::ProtoObject* srcType = getType(ctx, obj);
+            if (srcType && srcType != PROTO_NONE && immutableBuiltinTypes_.count(srcType)
+                    && obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0
                     && obj->hasOwnAttribute(ctx, classString) == PROTO_TRUE) {
                 const proto::ProtoObject* own = obj->getOwnAttributeDirect(ctx, classString);
-                if (own && own != PROTO_NONE && isActuallyAClass(ctx, own)) srcType = own;
+                if (own && own != PROTO_NONE && own != srcType && isActuallyAClass(ctx, own)) {
+                    const proto::ProtoObject* m = getAttribute(ctx, own, getMroString(), false);
+                    ::protoPython::TupleView mt = m ? ::protoPython::PythonEnvironment::tupleView(ctx, m) : nullptr;
+                    for (proto::proto_ulong i = 0; mt && i < mt->getSize(ctx); ++i)
+                        if (mt->getAt(ctx, static_cast<int>(i)) == srcType) { srcType = own; break; }
+                }
             }
-            if (!srcType) srcType = getType(ctx, obj);
             const proto::ProtoObject* dstType = value;
             // dst must be a class object at all.  Probe widely so
             // both heap types (user classes via __is_python_class__),
@@ -31680,6 +31709,10 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                     if (obj->hasOwnAttribute(ctx, classString) == PROTO_TRUE)
                         const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, classString, value);
                     invalidateResolveCache();
+                    // The instance may own a name a data descriptor of the
+                    // new class governs: the descriptor must answer it, as
+                    // for a descriptor added to a class late.
+                    markDataDescriptorShadow(ctx, value);
                 }
             }
         }

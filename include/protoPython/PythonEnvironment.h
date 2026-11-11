@@ -1317,6 +1317,12 @@ public:
      *  descriptor first (instanceReadNeedsFullLookup).  Sticky: the entry
      *  keeps its marker (markDataDescriptorShadow). */
     static constexpr uint32_t PYFLAG_DESCR_SHADOW          = 1u << 8;
+    /** The class itself (not its MRO) has registered subclasses.  An object
+     *  whose first parent is such a class may be one of those subclasses, a
+     *  class object, so OP_STORE_ATTR's instance fast store asks whether it
+     *  is one; an instance of a leaf class pays nothing.  Dropped from a base
+     *  when a subclass registers (dropOwnClassFlags). */
+    static constexpr uint32_t PYFLAG_HAS_SUBCLASSES        = 1u << 9;
     static constexpr uint32_t PYFLAG_COMPUTED              = 1u << 31;
 
     /** Fast read of cached flags; returns 0 when not yet computed. */
@@ -1335,6 +1341,15 @@ public:
     void markDataDescriptorShadow(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
     void classAttributeChanged(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
                                const proto::ProtoString* name);
+    /** Drops the cached flags of `cls` only (a flag that its subclasses do
+     *  not inherit changed: PYFLAG_HAS_SUBCLASSES). */
+    void dropOwnClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
+    /** Whether OP_STORE_ATTR's plain instance store must decline `obj`,
+     *  whose first parent has flags `directFlags`, because obj is a class. */
+    bool storeReceiverIsClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj, uint32_t directFlags) const {
+        return (directFlags & PYFLAG_HAS_SUBCLASSES)
+            && obj->hasOwnAttribute(ctx, isPythonClassString) == PROTO_TRUE;
+    }
     /** Drops the cached flags of `cls` and of every transitive subclass. */
     void dropClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
 

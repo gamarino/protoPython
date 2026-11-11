@@ -308,6 +308,29 @@ static bool typeChainInterceptsStore(proto::ProtoContext* ctx, PythonEnvironment
     return false;
 }
 
+// LOAD_ATTR's full lookup.  An AttributeError raised while the attribute is
+// resolved (a property getter, a descriptor's __get__) means "missing" when
+// the type defines __getattr__, which CPython's slot_tp_getattr_hook then
+// calls; without __getattr__, or for any other exception, it propagates.
+static const proto::ProtoObject* loadAttrSlow(proto::ProtoContext* ctx, PythonEnvironment* env,
+                                              const proto::ProtoObject* obj, const proto::ProtoString* name,
+                                              bool* outIsUnboundFunc) {
+    try {
+        return env->getAttribute(ctx, obj, name, false, outIsUnboundFunc);
+    } catch (const proto::ProtoException& e) {
+        const proto::ProtoObject* exc = e.value();
+        const proto::ProtoObject* aeType = env->getAttributeErrorType();
+        if (!exc || !aeType || obj == PROTO_NONE
+                || !(env->getType(ctx, exc) == aeType || exc->isInstanceOf(ctx, aeType) == PROTO_TRUE))
+            throw;
+        bool passObj = true;
+        const proto::ProtoObject* hook = env->getattrHookFor(ctx, obj, &passObj);
+        if (!hook || hook == PROTO_NONE || !passObj) throw;
+        if (outIsUnboundFunc) *outIsUnboundFunc = false;
+        return nullptr;
+    }
+}
+
 // `obj.name = value` for generated code: OP_STORE_ATTR's plain instance write
 // when nothing on the type chain intercepts it (no __slots__, __setattr__ or
 // data descriptor of that name; not a class or a module; not __class__ or
@@ -334,7 +357,9 @@ bool PythonEnvironment::storeAttr(proto::ProtoContext* ctx, const proto::ProtoOb
         if (directType && directType != PROTO_NONE && directType != getTypePrototype() &&
                 directType != getModulePrototype() && obj != getBuiltinsModule()) {
             const uint32_t flags = ensureClassFlags(ctx, directType);
-            if ((flags & (PYFLAG_HAS_SLOTS | PYFLAG_NO_FAST_STORE)) == 0 && !typeChainInterceptsStore(ctx, this, directType, flags, nameS)) {
+            // A class receiver takes the full class store (see OP_STORE_ATTR).
+            if ((flags & (PYFLAG_HAS_SLOTS | PYFLAG_NO_FAST_STORE)) == 0 && !typeChainInterceptsStore(ctx, this, directType, flags, nameS)
+                    && !storeReceiverIsClass(ctx, obj, flags)) {
                 obj->setAttribute(ctx, nameS, value);
                 return true;
             }
@@ -8598,7 +8623,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             } else {
                                 // PIC MISS — do the slow path, then populate
                                 // only with receiver-independent results.
-                                val = env->getAttribute(ctx, obj, attrName, false, &isUnboundFunc);
+                                val = loadAttrSlow(ctx, env, obj, attrName, &isUnboundFunc);
                                 if (val && val != PROTO_NONE) {
                                     if (isUnboundFunc) {
                                         slot->type         = type;
@@ -8624,8 +8649,8 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         }
                     }
                     if (!picHandled) {
-                        val = env ? env->getAttribute(ctx, obj, attrName, false,
-                                                      pushNull ? &isUnboundFunc : nullptr)
+                        val = env ? loadAttrSlow(ctx, env, obj, attrName,
+                                                 pushNull ? &isUnboundFunc : nullptr)
                                   : obj->getAttribute(ctx, attrName);
                     }
 
@@ -8989,12 +9014,18 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                         // check is skipped entirely; otherwise we still
                         // probe the specific name.
                         //
-                        // "obj is itself a class" is decided by the cheap
-                        // pointer compare `directType == typePrototype`:
-                        // every Python class created by py_type has
-                        // typePrototype as its direct parent.  Metaclass
-                        // instances (rare) bail to the slow path through
-                        // the same fall-through.
+                        // A class receiver never takes this store: a class
+                        // whose base is a user class has that base, not
+                        // type, as its first parent, so `directType !=
+                        // typePrototype` does not exclude it, and the raw
+                        // write would skip env->setAttribute's class
+                        // protocol (class-flag invalidation, the late
+                        // data-descriptor marker).  Only a class with
+                        // subclasses can be such a receiver's first parent
+                        // (PYFLAG_HAS_SUBCLASSES); then the receiver's own
+                        // __is_python_class__ marker decides.  A built-in
+                        // type object's first parent sets
+                        // PYFLAG_NO_FAST_STORE.
                         const proto::ProtoObject* directType = obj->getFirstParent(ctx);
                         if (directType && directType != PROTO_NONE
                                 && directType != env->getTypePrototype()) {
@@ -9026,7 +9057,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                             // then dispatches the hook or the descriptor.
                             const bool intercepted =
                                 typeChainInterceptsStore(ctx, env, directType, flags, nameS);
-                            if (noSlots && !intercepted) {
+                            if (noSlots && !intercepted && !env->storeReceiverIsClass(ctx, obj, flags)) {
                                 newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, val);
                                 fastStoreTaken = true;
                                 // A module attribute is a global of that module

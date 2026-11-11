@@ -5451,6 +5451,24 @@ static const proto::ProtoObject* py_hasattr(
                 if (excName && excName->isString(context)) excName->asString(context)->toUTF8String(context, en);
                 // Non-AttributeError — propagate.
                 if (en != "AttributeError") throw;
+                // An AttributeError from the lookup itself (a property
+                // getter) is "missing", and the type's __getattr__ then
+                // answers, as getattr() does (CPython's slot_tp_getattr_hook).
+                bool passObj = true;
+                const proto::ProtoObject* hook = obj != PROTO_NONE
+                    ? envInner->getattrHookFor(context, obj, &passObj) : nullptr;
+                if (hook && hook != PROTO_NONE && passObj) {
+                    try {
+                        const proto::ProtoObject* r = envInner->callObject(hook, {obj, nameObj});
+                        return r ? PROTO_TRUE : PROTO_FALSE;
+                    } catch (const proto::ProtoException& e2) {
+                        const proto::ProtoObject* exc2 = e2.value();
+                        const proto::ProtoObject* aeType = envInner->getAttributeErrorType();
+                        if (!(exc2 && aeType && (envInner->getType(context, exc2) == aeType
+                                || exc2->isInstanceOf(context, aeType) == PROTO_TRUE))) throw;
+                        return PROTO_FALSE;
+                    }
+                }
                 // env->getAttribute already exhausted the
                 // descriptor protocol and __getattr__ fallback;
                 // an AttributeError here means CPython's
@@ -7525,6 +7543,8 @@ const proto::ProtoObject* py_type(
                     ? ::protoPython::listStorage(context, listObj) : context->newList();
                 curList = curList->appendLast(context, targetClass);
                 const_cast<proto::ProtoObject*>(base)->setAttribute(context, subListS, curList->asObject(context));
+                // The base now has a subclass (PYFLAG_HAS_SUBCLASSES).
+                if (env) env->dropOwnClassFlags(context, base);
             }
         }
 
