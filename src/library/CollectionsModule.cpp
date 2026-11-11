@@ -45,7 +45,7 @@ static const proto::ProtoObject* py_tuple_getter_get(proto::ProtoContext* ctx, c
     ::protoPython::TupleView tup = ::protoPython::PythonEnvironment::tupleView(ctx, instance);
     if (!tup) {
         const proto::ProtoObject* data = instance->getAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "__data__"));
+            PythonEnvironment::getInternedString(ctx, "\001__data__"));
         if (data) tup = ::protoPython::PythonEnvironment::tupleView(ctx, data);
     }
     if (tup && index >= 0 && (size_t)index < tup->getSize(ctx)) {
@@ -91,7 +91,7 @@ static void deque_finalizer(void* ptr) {
 }
 
 static DequeState* get_deque_state(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
-    const proto::ProtoString* key = PythonEnvironment::getInternalString(ctx, "__deque_ptr__");
+    const proto::ProtoString* key = PythonEnvironment::getInternalString(ctx, "\001__deque_ptr__");
     const proto::ProtoObject* ptrObj = self->getAttribute(ctx, key);
     if (ptrObj) {
         const proto::ProtoExternalPointer* ext = ptrObj->asExternalPointer(ctx);
@@ -127,11 +127,11 @@ static DequeState* resolve_deque_receiver(proto::ProtoContext* ctx,
 }
 
 static const proto::ProtoString* deque_items_name(proto::ProtoContext* ctx) {
-    return PythonEnvironment::getInternalString(ctx, "__deque_items__");
+    return PythonEnvironment::getInternalString(ctx, "\001__deque_items__");
 }
 
 static const proto::ProtoString* deque_snapshot_name(proto::ProtoContext* ctx) {
-    return PythonEnvironment::getInternalString(ctx, "__deque_items_snapshot__");
+    return PythonEnvironment::getInternalString(ctx, "\001__deque_items_snapshot__");
 }
 
 // The deque's items, and in `raw` the attribute value they were read from:
@@ -368,6 +368,62 @@ static const proto::ProtoObject* py_deque_getitem(
 // calls this on its waiters deque to drop the lock that was just released.
 // deque.count(x): the number of elements equal to x, compared as list.count
 // does (identity first, then ==; an exception from __eq__ propagates).
+// deque.index(x[, start[, stop]]): the first position of an item equal to
+// x in [start, stop), negative bounds counted from the end; ValueError if
+// none.
+static const proto::ProtoObject* py_deque_index(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoArguments* posArgs,
+    const proto::ProtoKeywordArguments* /*kwArgs*/) {
+    proto::proto_ulong argOff = 0;
+    DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!state) {
+        if (env) env->raiseTypeError(ctx,
+            "descriptor 'index' for 'collections.deque' objects "
+            "doesn't apply to a non-deque object");
+        return nullptr;
+    }
+    const proto::proto_ulong given = posArgs ? posArgs->getSize(ctx) - argOff : 0;
+    if (given < 1 || given > 3) {
+        if (env) env->raiseTypeError(ctx, "index expected at least 1 argument, got " + std::to_string(given));
+        return nullptr;
+    }
+    const proto::ProtoObject* value = posArgs->getAt(ctx, static_cast<int>(argOff));
+    const proto::ProtoObject* receiver = argOff > 0 ? posArgs->getAt(ctx, 0) : self;
+    const proto::ProtoObject* raw = nullptr;
+    const proto::ProtoList* items = deque_items(ctx, receiver, raw);
+    const long long n = items ? static_cast<long long>(items->getSize(ctx)) : 0;
+    auto bound = [&](proto::proto_ulong at, long long dflt, long long& out) {
+        if (given <= at) { out = dflt; return true; }
+        const proto::ProtoObject* b = posArgs->getAt(ctx, static_cast<int>(argOff + at));
+        if (!b || !b->isInteger(ctx)) {
+            if (env) env->raiseTypeError(ctx, "slice indices must be integers or have an __index__ method");
+            return false;
+        }
+        long long v = b->asLong(ctx);
+        if (v < 0) { v += n; if (v < 0) v = 0; }
+        if (v > n) v = n;
+        out = v;
+        return true;
+    };
+    long long start = 0, stop = n;
+    if (!bound(1, 0, start) || !bound(2, n, stop)) return nullptr;
+    // A snapshot: __eq__ calls that mutate the deque do not disturb the walk;
+    // it is pinned once a comparison may run Python code.
+    PythonEnvironment::LazyComparePins pins(ctx, items ? items->asObject(ctx) : nullptr);
+    for (long long i = start; i < stop; ++i) {
+        const proto::ProtoObject* item = items->getAt(ctx, static_cast<int>(i));
+        if (item == value) return ctx->fromInteger(i);
+        pins.beforeCompare(item, value);
+        if (env && env->objectsEqual(ctx, item, value)) return ctx->fromInteger(i);
+    }
+    if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "deque.index(x): x not in deque")->asObject(ctx));
+    return nullptr;
+}
+
 static const proto::ProtoObject* py_deque_count(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -601,7 +657,7 @@ static const proto::ProtoObject* py_deque_iter(
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) return PROTO_NONE;
-    const proto::ProtoString* itProtoS = PythonEnvironment::getInternalString(ctx, "__deque_iterator_proto__");
+    const proto::ProtoString* itProtoS = PythonEnvironment::getInternalString(ctx, "\001__deque_iterator_proto__");
     const proto::ProtoObject* itProto = self->getAttribute(ctx, itProtoS);
     // A deque subclass instance does not reach it through its own chain:
     // look it up on the type.
@@ -612,10 +668,10 @@ static const proto::ProtoObject* py_deque_iter(
     if (!itProto || itProto == PROTO_NONE) return PROTO_NONE;
 
     const proto::ProtoObject* instance = itProto->newChild(ctx, true);
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"), self);
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_obj__"), self);
     const proto::ProtoObject* raw = nullptr;
     deque_items(ctx, self, raw);
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"), ctx->fromInteger(0));
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_idx__"), ctx->fromInteger(0));
     // The iterator reads from, and checks for mutation against, this snapshot.
     instance = instance->setAttribute(ctx, deque_snapshot_name(ctx), raw ? raw : PROTO_NONE);
     return instance;
@@ -632,7 +688,7 @@ static const proto::ProtoObject* py_deque_reversed(
     proto::proto_ulong argOff = 0;
     DequeState* state = resolve_deque_receiver(ctx, self, posArgs, argOff);
     if (!state) return PROTO_NONE;
-    const proto::ProtoString* itProtoS = PythonEnvironment::getInternalString(ctx, "__deque_reverse_iterator_proto__");
+    const proto::ProtoString* itProtoS = PythonEnvironment::getInternalString(ctx, "\001__deque_reverse_iterator_proto__");
     const proto::ProtoObject* itProto = self->getAttribute(ctx, itProtoS);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if ((!itProto || itProto == PROTO_NONE) && env) {
@@ -641,10 +697,10 @@ static const proto::ProtoObject* py_deque_reversed(
     if (!itProto || itProto == PROTO_NONE) return PROTO_NONE;
 
     const proto::ProtoObject* instance = itProto->newChild(ctx, true);
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"), self);
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_obj__"), self);
     const proto::ProtoObject* raw = nullptr;
     const proto::ProtoList* items = deque_items(ctx, self, raw);
-    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"),
+    instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_idx__"),
         ctx->fromInteger(static_cast<long long>(items->getSize(ctx)) - 1));
     instance = instance->setAttribute(ctx, deque_snapshot_name(ctx), raw ? raw : PROTO_NONE);
     return instance;
@@ -658,8 +714,8 @@ static const proto::ProtoObject* py_deque_iterator_next(
     const proto::ProtoKeywordArguments* kwArgs) {
     (void)parentLink; (void)posArgs; (void)kwArgs;
     
-    const proto::ProtoObject* dequeObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"));
-    const proto::ProtoObject* idxObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"));
+    const proto::ProtoObject* dequeObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_obj__"));
+    const proto::ProtoObject* idxObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_idx__"));
     const proto::ProtoObject* mutationObj = self->getAttribute(ctx, deque_snapshot_name(ctx));
     if (!dequeObj || !idxObj || !mutationObj) return nullptr;
     
@@ -680,7 +736,7 @@ static const proto::ProtoObject* py_deque_iterator_next(
     }
     
     const proto::ProtoObject* val = items->getAt(ctx, static_cast<int>(idx));
-    self->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"), ctx->fromInteger(idx + 1));
+    self->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_idx__"), ctx->fromInteger(idx + 1));
     return val;
 }
 
@@ -692,8 +748,8 @@ static const proto::ProtoObject* py_deque_reverse_iterator_next(
     const proto::ProtoKeywordArguments* kwArgs) {
     (void)parentLink; (void)posArgs; (void)kwArgs;
     
-    const proto::ProtoObject* dequeObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_obj__"));
-    const proto::ProtoObject* idxObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"));
+    const proto::ProtoObject* dequeObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_obj__"));
+    const proto::ProtoObject* idxObj = self->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_idx__"));
     const proto::ProtoObject* mutationObj = self->getAttribute(ctx, deque_snapshot_name(ctx));
     if (!dequeObj || !idxObj || !mutationObj) return nullptr;
     
@@ -714,7 +770,7 @@ static const proto::ProtoObject* py_deque_reverse_iterator_next(
     }
     
     const proto::ProtoObject* val = items->getAt(ctx, static_cast<int>(idx));
-    self->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_idx__"), ctx->fromInteger(idx - 1));
+    self->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_idx__"), ctx->fromInteger(idx - 1));
     return val;
 }
 
@@ -739,7 +795,7 @@ static const proto::ProtoObject* py_deque_new(
     const proto::ProtoObject* instance = cls->newChild(ctx, true);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"), cls);
     DequeState* state = new DequeState();
-    const proto::ProtoString* key = PythonEnvironment::getInternalString(ctx, "__deque_ptr__");
+    const proto::ProtoString* key = PythonEnvironment::getInternalString(ctx, "\001__deque_ptr__");
     instance = instance->setAttribute(ctx, key,
                                     ctx->fromExternalPointer(state, deque_finalizer));
     instance = instance->setAttribute(ctx, deque_items_name(ctx), ctx->newList()->asObject(ctx));
@@ -782,8 +838,8 @@ static const proto::ProtoObject* py_deque_init(
     const proto::ProtoObject* maxlenObj = nargs > argOff + 1
         ? posArgs->getAt(ctx, static_cast<int>(argOff + 1)) : PROTO_NONE;
     if (kwArgs) {
-        proto::proto_ulong iterableH = PythonEnvironment::getInternedString(ctx, "iterable")->getHash(ctx);
-        proto::proto_ulong maxlenH = PythonEnvironment::getInternedString(ctx, "maxlen")->getHash(ctx);
+        proto::proto_ulong iterableH = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "iterable"));
+        proto::proto_ulong maxlenH = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "maxlen"));
         if (kwArgs->has(ctx, iterableH)) iterable = kwArgs->getAt(ctx, iterableH);
         if (kwArgs->has(ctx, maxlenH)) maxlenObj = kwArgs->getAt(ctx, maxlenH);
     }
@@ -922,6 +978,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                  ctx->fromMethod(nullptr, py_deque_remove));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "count"),
                                                  ctx->fromMethod(nullptr, py_deque_count));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "index"),
+                                                 ctx->fromMethod(nullptr, py_deque_index));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__getitem__"),
                                                  ctx->fromMethod(nullptr, py_deque_getitem));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "clear"),
@@ -964,7 +1022,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                  ctx->fromMethod(nullptr, py_deque_init));
     
     // Store prototype in module
-    module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_prototype__"), dequePrototype);
+    module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_prototype__"), dequePrototype);
 
     module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "deque"), dequePrototype);
 
@@ -1003,7 +1061,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                  ctx->fromMethod(nullptr, py_deque_repr));
     dequePrototype = dequePrototype->setAttribute(ctx, env->getStrString(),
                                                  ctx->fromMethod(nullptr, py_deque_repr));
-    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_iterator_proto__"), deque_iterator);
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_iterator_proto__"), deque_iterator);
 
     const proto::ProtoObject* deque_reverse_iterator = ctx->newObject(false);
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_deque_reverse_iterator")->asObject(ctx));
@@ -1021,7 +1079,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
             ctx->newTupleFromList(mroList)->asObject(ctx));
     }
     
-    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__deque_reverse_iterator_proto__"), deque_reverse_iterator);
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "\001__deque_reverse_iterator_proto__"), deque_reverse_iterator);
 
     module = module->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "_deque_iterator"), deque_iterator);
 

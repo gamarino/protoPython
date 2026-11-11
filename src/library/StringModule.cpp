@@ -154,7 +154,7 @@ static const proto::ProtoObject* py_formatter_parser(
         listObj = const_cast<proto::ProtoObject*>(listObj->addParent(ctx, env->getListPrototype()));
     }
     listObj = const_cast<proto::ProtoObject*>(listObj->setAttribute(ctx,
-        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"),
+        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "\001__data__"),
         result->asObject(ctx)));
     return listObj;
 }
@@ -243,7 +243,7 @@ static const proto::ProtoObject* py_formatter_field_name_split(
         restListObj = const_cast<proto::ProtoObject*>(restListObj->addParent(ctx, env->getListPrototype()));
     }
     restListObj = const_cast<proto::ProtoObject*>(restListObj->setAttribute(ctx,
-        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"),
+        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "\001__data__"),
         rest_parts->asObject(ctx)));
 
     // Return (first, rest_iterator) as a 2-tuple

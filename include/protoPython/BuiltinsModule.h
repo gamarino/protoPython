@@ -2,6 +2,7 @@
 #define PROTOPYTHON_BUILTINSMODULE_H
 
 #include <protoCore.h>
+#include <string>
 
 namespace protoPython {
 namespace builtins {

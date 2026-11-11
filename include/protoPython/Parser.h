@@ -119,6 +119,9 @@ struct FormattedValueNode : ASTNode {
     std::unique_ptr<ASTNode> value;
     char conversion = 0; // 'r', 's', 'a'
     std::string format_spec;
+    // A spec with replacement fields (f'{x:{width}}'): a JoinedStrNode
+    // evaluated at run time; format_spec is then empty.
+    std::unique_ptr<ASTNode> format_spec_node;
 };
 
 /** An f-string containing constant parts and FormattedValueNodes. */
@@ -566,6 +569,9 @@ private:
     std::vector<std::unique_ptr<TypeParamNode>> parseTypeParams();
     std::unique_ptr<ASTNode> parseLambda();
     std::unique_ptr<ASTNode> parseFString();
+    /** The parts of an f-string's text (or of a nested format spec) into @p joined. */
+    bool parseFStringBody(const std::string& raw, int firstLine, JoinedStrNode* joined, int specDepth,
+                         bool rawString);
     std::unique_ptr<ASTNode> parseOrExpr();
     std::unique_ptr<ASTNode> parseAndExpr();
     std::unique_ptr<ASTNode> parseNotExpr();

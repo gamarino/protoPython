@@ -17,15 +17,16 @@ const proto::ProtoObject* NativeModuleProvider::tryLoad(const std::string& logic
         const proto::ProtoObject* mod = it->second(ctx);
         if (mod && mod != PROTO_NONE) {
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            if (env) {
-                if (mod->getAttribute(ctx, env->getExecutedString()) != PROTO_TRUE) {
-                    mod = mod->setAttribute(ctx, env->getExecutedString(), PROTO_TRUE);
-                }
-            } else {
-                const proto::ProtoString* executedS = proto::ProtoString::createSymbol(ctx, "__executed__");
-                if (mod->getAttribute(ctx, executedS) != PROTO_TRUE) {
-                    mod = mod->setAttribute(ctx, executedS, PROTO_TRUE);
-                }
+            const proto::ProtoString* executedS = env ? env->getExecutedString()
+                                                      : proto::ProtoString::createSymbol(ctx, "\001__executed__");
+            // A module object is mutable, as in CPython: `math.sqrt = f`
+            // (and unittest.mock.patch) must replace the attribute. A
+            // module built immutable answers its update with a new object;
+            // it is thawed into a mutable copy here, once.
+            const proto::ProtoObject* flagged = mod->setAttribute(ctx, executedS, PROTO_TRUE);
+            if (flagged != mod) {
+                const proto::ProtoObject* thawed = flagged->clone(ctx, true);
+                mod = (thawed && thawed != PROTO_NONE) ? thawed : flagged;
             }
         }
         return mod;

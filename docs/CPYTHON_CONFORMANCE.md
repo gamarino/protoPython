@@ -85,15 +85,83 @@ defect and adds a `test/regression/*.py` test registered in
   `keys` shadows the dict method: after `exec("def get(k): pass", d)`, `d.get(...)`
   calls that function. A metaclass written in Python receives a dict of the body's
   names instead, so `ABCMeta` is not affected; `n in ns` can be True for a name
-  `ns[n]` does not find.
+  `ns[n]` does not find. Reading a name in such a dict no longer finds the dict
+  type's attributes (round 10: `__name__` read as `'dict'`).
 - **Builtins (found 2026-10-21):** `range` holds 64-bit integers only
   (`range(1 << 1000)` raises; CPython's `longrange_iterator` does not exist);
   `type(iter(range(0)))` is `object` and built-in iterator types leave themselves
   out of their `__mro__`; `reversed()` ignores `__reversed__ = None`;
-  `'{0.__class__.__name__}'.format(x)` gives `'type'` for any object;
-  `hash(frozenset(...))` uses another algorithm; `isinstance(len,
+  `complex.__format__` takes only an empty spec (`format(1+2j, '.2f')`
+  raises `TypeError`); `hash(frozenset(...))` uses another algorithm; `isinstance(len,
   collections.abc.Callable)` is False; `vars(exc)` shows `args`; the
   abstract-instantiation `TypeError` does not name the methods.
+- **Dict views and namespaces (found 2026-11-10, review of 1.2.2):**
+  `d.keys()`, `d.items()` and `d.values()` are snapshots of the dict when the
+  view was made: after `k = d.keys(); d['b'] = 2`, `len(k)`, `'b' in k`,
+  iteration and the set operations still see the old contents (CPython's views
+  are live). Adding or removing keys while iterating over a dict or a view
+  raises no `RuntimeError` (CPython raises `dictionary changed size during
+  iteration`); the iteration walks the keys present when it started. A module
+  namespace (`vars(module)`, `globals()`) accepts only `str` keys: storing
+  another key, also through `update()`, raises `TypeError` (CPython stores it).
+- **Module namespace order (found 2026-11-10, review of 1.2.2):** iterating
+  `vars(module)` or `globals()` yields the names in protoCore's attribute order,
+  not in insertion order (`m.z = 1; m.a = 2` may list `a` first). A module's
+  names are the module object's own attributes, and protoCore does not define
+  the order it enumerates attributes in; keeping insertion order would need a
+  key list written on every global store, which protoPython stopped keeping
+  for performance. Dicts keep insertion order.
+- **Keyword names and hashes (found 2026-11-10, review of 1.2.2):** keyword
+  arguments are keyed by the interned name, so a name built at run time and
+  passed as a keyword (`f(**{str(i): v})`) is interned and stays in the
+  symbol table for the life of the process; a program that passes an
+  unbounded number of distinct generated names grows it without limit
+  (CPython does not intern these keys). Storing a name built at run time into
+  a module namespace (`globals()[name] = v`, `setattr(module, name, v)`)
+  interns it likewise, as an attribute name; reading or testing a name the
+  namespace does not bind interns nothing. `hash()` of a tuple is computed by
+  protoPython (CPython's xxHash round over the elements' dict indices), not
+  CPython's value; `hash()` of an int or a float matches CPython's.
+  `exec(..., closure=cells)` raises `TypeError`: cells cannot be supplied from
+  Python.
+- **Formatting and numbers (found 2026-11-11, review round 10 of 1.2.2):**
+  f-string fields, `format()`, `str.format` and `%` follow CPython, including
+  subclass `__format__`, PEP 701 field syntax and `__index__` / `__float__`
+  operands. Remaining differences: `complex.__format__` takes only an empty
+  spec; `object.__repr__(5)` and `object.__repr__(1.5)` give the value's repr
+  instead of `<int object at 0x...>`; `math.sumprod` of floats sums in plain
+  double precision (CPython uses extended precision, so the last bit can
+  differ); an int power whose result cannot be represented (`2 ** (10**20)`)
+  raises `OverflowError: integer exponentiation result too large` where
+  CPython would try and run out of memory; `math.isqrt`, `gcd`, `lcm`,
+  `factorial` and `ldexp` raise `OverflowError` for ints past 64 bits (CPython
+  computes them), and converting such an int to float says `LargeInteger value
+  exceeds long long range` in `int.__float__`, `complex()`, `sum()` and
+  `divmod()` (CPython: `int too large to convert to float`).
+- **`__dict__` of a function or an instance (found 2026-11-11):** the
+  mapping returned is a snapshot of the namespace, not the live dict
+  (planned for 1.3.0). Writes through it reach the object: `d[k] = v`,
+  `update()` and `|=` apply only the pairs they store, and `pop`, `popitem`,
+  `setdefault`, `del d[k]` and `clear()` first take the object's current
+  namespace (pop, setdefault and del only the touched name), so no mutation writes a stale value back or misses a name set
+  after the dict was taken. What remains:
+  - reads through a held dict are stale: `d = o.__dict__; o.x = 1` leaves
+    `d['x']` missing or old, and `o.__dict__ is o.__dict__` is False;
+  - **the AttrDict / Bunch idiom loses writes both ways:** after
+    `self.__dict__ = self` in a dict subclass, `b['d'] = 4` is not `b.d` and
+    `b.c = 3` is not `b['c']`;
+  - `o.__dict__[k] = v` through a fresh `o.__dict__` costs time linear in
+    the instance's size per write (a namespace resync per access), so
+    filling an instance this way is quadratic overall (2,000 writes: about
+    1.2 s); `popitem()` and `clear()` on a held dict pay the same resync;
+    `pop`, `del d[k]`, `update` and item assignment on a held dict are
+    linear in the instance's size per call, while `setattr` and
+    `setdefault` of an existing name are constant;
+  - with `__slots__` and `__dict__` together, slot values also appear in
+    `vars(o)`.
+  A name owned by a data descriptor of the type (property, `__slots__`
+  member) written through the dict stays in the namespace and does not
+  shadow the descriptor, as in CPython.
 - **collections.abc:** the ABCs are native classes without `ABCMeta`; each root ABC's
   `__init_subclass__` computes `__abstractmethods__`, so a subclass whose own
   `__init_subclass__` skips `super()` is not checked for abstract methods.
@@ -111,7 +179,40 @@ defect and adds a `test/regression/*.py` test registered in
   decode protoPython bytecode; `types.FrameType` is `object`.
 - **Attributes:** instances see class attributes such as `[].__name__`
   and `C().__mro__`; `dir(module)` lists `__qualname__`, `__module__` and
-  `__class__`.
+  `__class__`. (Since 1.2.2 built-in types are immutable and instances of
+  built-in types without `__dict__` accept no new attribute, as in CPython:
+  `list.x = 1` raises `TypeError`, `[].x = 1` `AttributeError`.)
+- **memoryview exports (1.2.2):** a bytearray counts as exports only the
+  memoryviews held by a `with` block (or by `__buffer__` until
+  `__release_buffer__`); resizing it while one is held raises CPython's
+  `BufferError: Existing exports of data: object cannot be re-sized`. Any
+  other view does not block a resize: CPython releases a view when its last
+  reference goes, and protoPython has no reference counting to tell when that
+  happens, so counting every view would raise for views nobody holds any
+  more (`bytes(memoryview(ba)[:n]); del ba[:n]`, the pattern asyncio's
+  streams use). Such a view instead raises `BufferError: memoryview: the
+  underlying bytearray was resized after the view was made` when it is used
+  after a resize; it never reads or writes shifted offsets. CPython raises at
+  the resize. `ba += ba` and `ba += memoryview(ba)` raise `BufferError` as
+  CPython 3.12 and 3.14 do (`extend(ba)` and `ba[0:0] = ba` work on both).
+  `with memoryview(ba)` makes the view and then holds it: a resize by another
+  thread between the two raises `BufferError` (the view is then stale) at the
+  `with`, where CPython's view is an export from its creation. A view made by
+  `__buffer__` holds its export from the start. For an object whose
+  `__buffer__` is Python code (PEP 688), `memoryview(obj)` calls
+  `obj.__release_buffer__(view)` once, when the view is released by
+  `release()` or at the end of its `with` block; a view dropped without
+  either is never released (nothing tells protoPython when its last
+  reference goes), so the exporter keeps that export, and a bytearray behind
+  it stays non-resizable, until the program ends. CPython releases it with
+  the last reference. A `with` block inside a
+  generator that is never resumed holds its export until the program ends
+  (no finalisation runs for it). A view of an `array.array` is a read-only
+  snapshot of the array when the view was made.
+- **struct native mode:** `'@'` uses the standard sizes and no alignment
+  (`calcsize('@bi')` is 5, CPython's is 8; `'l'` is 4 bytes) and native byte
+  order is little-endian; `n`, `N`, `P` and `e` are not implemented in
+  `struct` (memoryview supports them).
 - **Comparisons:** `object.__ne__` runs a full comparison, so
   `[].__ne__(())` is True where CPython returns NotImplemented.
 - **Error messages and reprs:** `sys.x` raises "'object' object has no
@@ -123,8 +224,7 @@ defect and adds a `test/regression/*.py` test registered in
   pipes; async-generator hooks are stored but never called;
   `sys.is_finalizing()` is always False.
 - **Runtime:** `gc.collect()` is a no-op (protoCore collects under heap
-  pressure only); sets and dicts treat two distinct keys with equal
-  hashes as the same key (accepted limitation).
+  pressure only).
 - **Files are closed by `close()`, `with`, or collection, not by losing their
   last reference.** CPython closes `open(p, "w").write(s)`'s file at the end
   of the statement (reference counting); protoPython has no reference counts,

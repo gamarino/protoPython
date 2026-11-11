@@ -48,7 +48,7 @@ static const proto::ProtoObject* py_check_methods(
         if (!methodObj || !methodObj->isString(ctx)) return notImplemented;
         std::string name;
         methodObj->asString(ctx)->toUTF8String(ctx, name);
-        const proto::ProtoString* key = PythonEnvironment::getInternedString(ctx, name);
+        const proto::ProtoString* key = PythonEnvironment::pythonAttributeKey(ctx, name);
         bool found = false;
         // C itself first, as definesAll: some native types leave themselves
         // out of their own __mro__.
@@ -179,7 +179,7 @@ std::vector<std::string> abcMro(const std::string& name) {
 }
 
 const proto::ProtoString* stateKey(proto::ProtoContext* ctx) {
-    return PythonEnvironment::getInternedString(ctx, "__abc_state__");
+    return PythonEnvironment::getInternedString(ctx, "\001__abc_state__");
 }
 const proto::ProtoString* registryKey(proto::ProtoContext* ctx) {
     return PythonEnvironment::getInternedString(ctx, "registry");
@@ -281,7 +281,7 @@ bool virtualSubclass(proto::ProtoContext* ctx, PythonEnvironment* env,
     for (const AbcSpec& sub : kAbcSpecs) {
         for (const char* b : sub.bases) {
             if (!b || name != b) continue;
-            const proto::ProtoObject* subAbc = all->getAttribute(ctx,
+            const proto::ProtoObject* subAbc = all->getAttribute(ctx,  // raw-key: a name from a C++ table
                 PythonEnvironment::getInternedString(ctx, sub.name));
             if (subAbc && virtualSubclass(ctx, env, cls, subAbc, depth + 1)) return true;
         }
@@ -773,7 +773,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         const proto::ProtoString* s_name = env ? env->getNameString() : PythonEnvironment::getInternedString(ctx, "__name__");
         const proto::ProtoString* s_class = env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
         const proto::ProtoString* s_register = PythonEnvironment::getInternedString(ctx, "register");
-        const proto::ProtoString* s_is_py_class = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
+        const proto::ProtoString* s_is_py_class = PythonEnvironment::getInternedString(ctx, "\001__is_python_class__");
 
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_register, ctx->fromMethod(abc, py_abc_register)));
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_name, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx)));
@@ -829,7 +829,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         const proto::ProtoObject* objProto = env ? env->getObjectPrototype() : nullptr;
         if (!objProto) return;
         auto abcNamed = [&](const std::string& n) {
-            return all->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, n.c_str()));
+            return all->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, n.c_str()));  // raw-key: a name from a C++ table
         };
         const proto::ProtoList* bases = ctx->newList();
         if (const AbcSpec* spec = specByName(name)) {
@@ -918,7 +918,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_collections_abc")->asObject(ctx));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__loader__"), PROTO_NONE); 
-    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__executed__"), PROTO_TRUE);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "\001__executed__"), PROTO_TRUE);
 
     // The class bodies' attributes; CPython's methods arrive on first use.
     if (env) {

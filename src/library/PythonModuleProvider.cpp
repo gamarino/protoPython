@@ -135,8 +135,9 @@ static std::vector<std::string> parentPackagePath(const std::string& parentName,
     const proto::ProtoObject* data = (modules && modules != PROTO_NONE)
         ? modules->getAttribute(ctx, env->getDataString()) : nullptr;
     const proto::ProtoSparseList* dict = (data && data != PROTO_NONE) ? data->asSparseList(ctx) : nullptr;
-    const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, parentName.c_str())->getHash(ctx);
-    const proto::ProtoObject* parent = (dict && dict->has(ctx, h)) ? dict->getAt(ctx, h) : nullptr;
+    const proto::ProtoObject* parent = dict
+        ? PythonEnvironment::dictDataGet(ctx, dict, PythonEnvironment::getInternedString(ctx, parentName.c_str())->asObject(ctx))
+        : nullptr;
     if (!parent || parent == PROTO_NONE) return entries;
     const proto::ProtoObject* pathObj = parent->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__path__"));
     const proto::ProtoList* list = env ? listElements(ctx, env, pathObj) : nullptr;

@@ -159,7 +159,14 @@ int Compiler::addName(const std::string& name) {
 static int stackEffect(int op, int arg) {
     switch (op) {
         // Loads (+1)
-        case OP_LOAD_CONST: case OP_LOAD_NAME: case OP_LOAD_GLOBAL:
+        // LOAD_NAME / LOAD_GLOBAL with the low argument bit set also push
+        // the NULL marker of a call (+2): counting them +1 underestimated
+        // every call by one slot, so a frame with many calls could
+        // overflow its operand stack on a later wide expression (a list
+        // literal of ~30 items after a few dozen calls).
+        case OP_LOAD_NAME: case OP_LOAD_GLOBAL:
+            return 1 + (arg & 1);
+        case OP_LOAD_CONST:
         case OP_LOAD_FAST:  case OP_LOAD_DEREF:
         case OP_LOAD_CLOSURE: case OP_LOAD_CLASSDEREF:
         case OP_DUP_TOP:    case OP_PUSH_NULL:
@@ -206,10 +213,19 @@ static int stackEffect(int op, int arg) {
         case OP_GET_YIELD_FROM_ITER:
             return 0;
 
-        // BUILD_FUNCTION pops its closure cells (and, uncounted here, its
-        // defaults and annotations: an overestimate is safe).
+        // BUILD_FUNCTION pops the code object, its closure cells and one
+        // operand per flag bit (defaults 0x01, keyword-only defaults 0x02,
+        // annotations 0x04), and pushes the function.
         case OP_BUILD_FUNCTION:
-            return -(arg >> BUILD_FUNCTION_CELLS_SHIFT);
+            return -((arg >> BUILD_FUNCTION_CELLS_SHIFT) + (arg & 1) + ((arg >> 1) & 1) + ((arg >> 2) & 1));
+        // BUILD_CLASS pops name, bases, keywords and the body function, and
+        // pushes the class.
+        case OP_BUILD_CLASS:
+            return -3;
+        // UNPACK_EX pops the sequence and pushes the `before` items, the
+        // starred list and the `after` items.
+        case OP_UNPACK_EX:
+            return (arg & 0xFF) + ((arg >> 8) & 0xFF);
 
         // PD1: GET_ANEXT keeps the aiter on the stack and pushes the
         // awaitable on top — net +1.  Was previously falling through
@@ -219,11 +235,10 @@ static int stackEffect(int op, int arg) {
         case OP_GET_ANEXT:
             return 1;
 
-        // LOAD_ATTR: pops object, but when loading a method replaces it with NULL and
-        // pushes the method (+1 net). Accounting for the worst case (method) avoids
-        // GCStack overflow from systematic underestimation of max stack depth.
+        // LOAD_ATTR replaces the object with the attribute; with the low
+        // argument bit (a method call) it pushes the NULL / self marker too.
         case OP_LOAD_ATTR:
-            return 1;
+            return arg & 1;
 
         // Binary ops (-1 net: pop 2, push 1)
         case OP_BINARY_ADD:       case OP_BINARY_SUBTRACT:
@@ -262,6 +277,9 @@ static int stackEffect(int op, int arg) {
         case OP_BUILD_LIST: case OP_BUILD_TUPLE: case OP_BUILD_SET:
         case OP_BUILD_STRING:
             return 1 - arg;
+        // FORMAT_VALUE: pops the value (and the spec when arg & 4), pushes the str.
+        case OP_FORMAT_VALUE:
+            return (arg & 0x04) ? -1 : 0;
         case OP_BUILD_MAP:
             return 1 - 2 * arg;
         case OP_BUILD_SLICE:
@@ -273,7 +291,9 @@ static int stackEffect(int op, int arg) {
         case OP_CALL_FUNCTION_KW:
             return -(arg + 2); // also pops kwnames tuple
         case OP_CALL_FUNCTION_EX:
-            return -(1 + (arg & 1)); // EX pops args-tuple [+ kwargs-dict]
+            // Pops [NULL or self][callable][args tuple][kwargs dict if arg & 1],
+            // pushes the result.
+            return -(2 + (arg & 1));
 
         // Comprehension helpers: pop TOS into container at stack[top-arg-1], no push
         case OP_LIST_APPEND: case OP_SET_ADD:
@@ -320,6 +340,23 @@ static int stackEffect(int op, int arg) {
     }
 }
 
+// The slots an opcode uses above the operands it starts with while it runs
+// (an anchor the interpreter pushes and pops again), beyond its net effect.
+static int stackPeak(int op, int arg) {
+    switch (op) {
+        // The closure list and the new function are rooted on the stack
+        // above the operands until the operands are popped.
+        case OP_BUILD_FUNCTION:
+            return 2;
+        // The class namespace, then the class, is rooted above the operands.
+        case OP_BUILD_CLASS:
+            return 1;
+        default:
+            (void)arg;
+            return 0;
+    }
+}
+
 int opcodeStackEffect(int op, int arg) { return stackEffect(op, arg); }
 
 void Compiler::emit(int op, int arg) {
@@ -328,6 +365,7 @@ void Compiler::emit(int op, int arg) {
     }
     bytecodeVec_ = bytecodeVec_->appendLast(ctx_, ctx_->fromInteger(op));
     bytecodeVec_ = bytecodeVec_->appendLast(ctx_, ctx_->fromInteger(arg));
+    if (currentStack_ + stackPeak(op, arg) > maxStack_) maxStack_ = currentStack_ + stackPeak(op, arg);
     currentStack_ += stackEffect(op, arg);
     if (currentStack_ > maxStack_) maxStack_ = currentStack_;
 }
@@ -651,7 +689,7 @@ bool Compiler::compileConstant(ConstantNode* n) {
                 n->bytesVal.data(),
                 static_cast<proto::proto_ulong>(n->bytesVal.size()));
             b->setAttribute(ctx_,
-                PythonEnvironment::getInternedString(ctx_, "__data__"),
+                PythonEnvironment::getInternedString(ctx_, "\001__data__"),
                 bb->asObject(ctx_));
             // Set __class__ so getType() returns bytesPrototype (not typePrototype via prototype-chain lookup).
             b->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "__class__"), env->getBytesPrototype());
@@ -1706,6 +1744,8 @@ bool Compiler::compileWhile(WhileNode* n) {
 bool Compiler::compileFor(ForNode* n) {
     if (!n || !compileNode(n->iter.get())) return false;
     emit(OP_GET_ITER);
+    // The depth with the iterator on the stack; FOR_ITER pops it on exit.
+    const int iterDepth = currentStack_;
     int loopStart = bytecodeOffset();
     
     loopStack_.push_back({loopStart, {}, blockEnvStack_.size(), true});
@@ -1717,6 +1757,7 @@ bool Compiler::compileFor(ForNode* n) {
     emit(OP_JUMP_ABSOLUTE, loopStart * 2);
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
+    currentStack_ = iterDepth - 1;
     
     // The else clause is outside the loop (see compileWhile): pop the loop
     // before compiling it so its `break` / `continue` reach the enclosing
@@ -1743,6 +1784,8 @@ bool Compiler::compileBreak(BreakNode* n) {
     // — break suppresses the return per CPython semantics, and leaving
     // the value behind would corrupt the surrounding loop's iterator
     // (FOR_ITER pops what it thinks is the iter on the next iteration).
+    // The code after the jump is reached with the depth before the break.
+    const int depth = currentStack_;
     for (int i = 0; i < returnUnwindDepth_; ++i) emit(OP_POP_TOP, 0);
     if (!unwindBlocks(true)) return false;
     if (loopStack_.back().hasIterator) {
@@ -1750,6 +1793,7 @@ bool Compiler::compileBreak(BreakNode* n) {
     }
     emit(OP_JUMP_ABSOLUTE, 0);
     loopStack_.back().breakPatches.push_back(bytecodeOffset() - 1);
+    currentStack_ = depth;
     return true;
 }
 
@@ -1757,9 +1801,11 @@ bool Compiler::compileContinue(ContinueNode* n) {
     if (loopStack_.empty()) return false;
     // Same rationale as compileBreak: discard any pending return value
     // when continuing out of a finally compiled for `return`.
+    const int depth = currentStack_;
     for (int i = 0; i < returnUnwindDepth_; ++i) emit(OP_POP_TOP, 0);
     if (!unwindBlocks(true)) return false;
     emit(OP_JUMP_ABSOLUTE, loopStack_.back().start * 2);
+    currentStack_ = depth;
     return true;
 }
 
@@ -2017,6 +2063,10 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
         body.isGenerator_ = isGenExpr;
         body.globalNames_ = globalNames_;
         body.isFunctionScope_ = true;
+        // A list, set or dict comprehension of a name scope is inlined in
+        // CPython (a generator expression is not, nor one in a class body).
+        body.nameScopeComprehension_ = !isGenExpr
+            && ((!isFunctionScope_ && !isClassBody_ && !classAnnotationScope_) || nameScopeComprehension_);
         // A comprehension is a function scope: inside a method it sees the class cell.
         body.classCellScope_ = classCellScope_ || isClassBody_ || classAnnotationScope_;
         body.nonlocalNames_ = compFree;
@@ -2059,6 +2109,7 @@ bool Compiler::compileComprehensionScope(const char* scopeName, std::vector<Comp
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
     if (isAsync) flags |= 0x80; // CO_COROUTINE
     else if (isGenExpr) flags |= 0x20; // CO_GENERATOR
+    if (body.nameScopeComprehension_) flags |= CO_NAME_SCOPE_COMPREHENSION;
     // Slots for the operand stack too: a stack held in a std::vector is not
     // a GC root (executeBytecodeRange).
     const int automatic = static_cast<int>(orderedLocals.size() + freeVars.size()) + body.getMaxStack() + 128;
@@ -2175,6 +2226,7 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
     // not return awaitables from __anext__ either: docs/VM.md, section 6.)
     if (!compileNode(gen.iter.get())) return false;
     emit(gen.is_async ? OP_GET_AITER : OP_GET_ITER);
+    const int iterDepth = currentStack_;
     loopStart = bytecodeOffset();
     emit(OP_FOR_ITER, 0);
     endSlot = bytecodeOffset() - 1;
@@ -2191,6 +2243,7 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
     
     emit(OP_JUMP_ABSOLUTE, loopStart * 2);
     addPatch(endSlot, bytecodeOffset());
+    currentStack_ = iterDepth - 1;
     for (int slot : ifSlots) {
         addPatch(slot, loopStart);
     }
@@ -2794,7 +2847,7 @@ static void collectWalrusTargets(ASTNode* node, OrderedNameSet& out) {
     if (auto* t = dynamic_cast<TupleLiteralNode*>(node)) return eachOf(t->elements);
     if (auto* st = dynamic_cast<SetLiteralNode*>(node)) return eachOf(st->elements);
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) { eachOf(d->keys); return eachOf(d->values); }
-    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return each({fv->value.get()});
+    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return each({fv->value.get(), fv->format_spec_node.get()});
     if (auto* js = dynamic_cast<JoinedStrNode*>(node)) return eachOf(js->values);
     if (auto* aw = dynamic_cast<AwaitNode*>(node)) return each({aw->value.get()});
     if (auto* y = dynamic_cast<YieldNode*>(node)) return each({y->value.get()});
@@ -3141,6 +3194,7 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
     }
     if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) {
         collectUsedNames(fv->value.get(), out);
+        if (fv->format_spec_node) collectUsedNames(fv->format_spec_node.get(), out);
         return;
     }
     if (auto* s = dynamic_cast<SuiteNode*>(node)) {
@@ -3875,6 +3929,7 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
         for (auto& v : js->values) collectCapturedNamesImpl(v.get(), globalsInScope, capturedOut, depth);
     } else if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) {
         collectCapturedNamesImpl(fv->value.get(), globalsInScope, capturedOut, depth);
+        if (fv->format_spec_node) collectCapturedNamesImpl(fv->format_spec_node.get(), globalsInScope, capturedOut, depth);
     } else if (auto* iff = dynamic_cast<IfNode*>(node)) {
         collectCapturedNamesImpl(iff->test.get(), globalsInScope, capturedOut, depth);
         collectCapturedNamesImpl(iff->body.get(), globalsInScope, capturedOut, depth);
@@ -4485,7 +4540,7 @@ bool bindsNameElsewhere(ASTNode* node, const std::string& name, const ASTNode* e
     if (auto* t = dynamic_cast<TupleLiteralNode*>(node)) return anyOf(t->elements);
     if (auto* st = dynamic_cast<SetLiteralNode*>(node)) return anyOf(st->elements);
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) return anyOf(d->keys) || anyOf(d->values);
-    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return any({fv->value.get()});
+    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return any({fv->value.get(), fv->format_spec_node.get()});
     if (auto* js = dynamic_cast<JoinedStrNode*>(node)) return anyOf(js->values);
     if (auto* ne = dynamic_cast<NamedExprNode*>(node))
         return targetBindsName(ne->target.get(), name, except) || any({ne->value.get()});
@@ -5643,6 +5698,7 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
 
     if (!compileNode(n->iter.get())) return false;
     emit(OP_GET_AITER);
+    const int iterDepth = currentStack_;
 
     int loopStart = bytecodeOffset();
     loopStack_.push_back({loopStart, {}, blockEnvStack_.size(), true});
@@ -5657,6 +5713,7 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
 
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
+    currentStack_ = iterDepth - 1;
 
     // The else clause is outside the loop (see compileFor).
     std::vector<int> breakPatches = std::move(loopStack_.back().breakPatches);
@@ -6095,10 +6152,13 @@ bool Compiler::compileCondExpr(ConditionalExprNode* n) {
     if (!compileNode(n->test.get())) return false;
     emit(OP_POP_JUMP_IF_FALSE, 0);
     int elseSlot = bytecodeOffset() - 1;
+    // Each branch pushes one value from the same depth.
+    const int depth = currentStack_;
     if (!compileNode(n->body.get())) return false;
     emit(OP_JUMP_ABSOLUTE, 0);
     int endSlot = bytecodeOffset() - 1;
     addPatch(elseSlot, bytecodeOffset());
+    currentStack_ = depth;
     if (!compileNode(n->orelse.get())) return false;
     addPatch(endSlot, bytecodeOffset());
     return true;
@@ -6609,46 +6669,28 @@ bool Compiler::compileJoinedStr(JoinedStrNode* n) {
 
 bool Compiler::compileFormattedValue(FormattedValueNode* n) {
     if (!n) return false;
-    // Resolve repr/str/ascii through emitNameOp so the load picks the right
-    // opcode (LOAD_FAST / LOAD_GLOBAL / LOAD_NAME) for the current scope.
-    // Previously this site emitted OP_LOAD_NAME unconditionally, which inside
-    // a function body bypassed env->resolve fast-path and could surface a
-    // stray PROTO_NONE from the frame's prototype chain — manifesting as
-    // 'NoneType' object is not callable for f"{x!r}" / !s / !a inside a
-    // function.  emitNameOp also injects the OP_PUSH_NULL ahead of the load
-    // for the 3.11+ calling convention, so we must not emit it here.
-    const char* convName = nullptr;
-    if (n->conversion == 'r')      convName = "repr";
-    else if (n->conversion == 's') convName = "str";
-    else if (n->conversion == 'a') convName = "ascii";
-    // PEP 498: when a format spec is present, render via the format()
-    // builtin so the f-string and `'{:spec}'.format(x)` share one code
-    // path.  Layout the stack as [.., NULL, format, value, spec] before
-    // OP_CALL_FUNCTION 2.  Otherwise leave the bare (possibly
-    // converted) value on the stack — the surrounding OP_BUILD_STRING
-    // handles the str() coercion at join time.
-    if (!n->format_spec.empty()) {
-        if (!emitNameOp("format", TargetCtx::Load, /*pushNull=*/true)) return false;
-        if (convName) {
-            if (!emitNameOp(convName, TargetCtx::Load, /*pushNull=*/true)) return false;
-            if (!compileNode(n->value.get())) return false;
-            emit(OP_CALL_FUNCTION, 1);
-        } else {
-            if (!compileNode(n->value.get())) return false;
-        }
+    // CPython's CONVERT_VALUE + FORMAT_SIMPLE / FORMAT_WITH_SPEC in one
+    // opcode: [value] or [value, spec] -> format(conv(value), spec). Every
+    // field is formatted here, so OP_BUILD_STRING only joins str objects, and
+    // no name is resolved (a user `format`, `str`, `repr` or `ascii` does not
+    // change an f-string).
+    //   arg & 0x03: conversion (0 none, 1 !s, 2 !r, 3 !a); arg & 0x04: spec on the stack.
+    int arg = 0;
+    if (n->conversion == 's') arg = 1;
+    else if (n->conversion == 'r') arg = 2;
+    else if (n->conversion == 'a') arg = 3;
+    if (!compileNode(n->value.get())) return false;
+    if (n->format_spec_node) {
+        // f'{x:{width}}': the spec is itself an f-string.
+        if (!compileNode(n->format_spec_node.get())) return false;
+        arg |= 0x04;
+    } else if (!n->format_spec.empty()) {
         int specIdx = addConstant(PythonEnvironment::getInternedString(
             ctx_, n->format_spec.c_str())->asObject(ctx_));
         emit(OP_LOAD_CONST, specIdx);
-        emit(OP_CALL_FUNCTION, 2);
-        return true;
+        arg |= 0x04;
     }
-    if (convName) {
-        if (!emitNameOp(convName, TargetCtx::Load, /*pushNull=*/true)) return false;
-        if (!compileNode(n->value.get())) return false;
-        emit(OP_CALL_FUNCTION, 1);
-    } else {
-        if (!compileNode(n->value.get())) return false;
-    }
+    emit(OP_FORMAT_VALUE, arg);
     return true;
 }
 

@@ -64,7 +64,7 @@ static proto::proto_ulong obj_key(const proto::ProtoObject* obj) {
 static const proto::ProtoSparseList* active_get(
     proto::ProtoContext* ctx, const proto::ProtoObject* mod) {
     if (!mod || mod == PROTO_NONE) return ctx->newSparseList();
-    const proto::ProtoObject* a = mod->getAttribute(ctx, sym(ctx, "__active__"));
+    const proto::ProtoObject* a = mod->getAttribute(ctx, sym(ctx, "\001__active__"));
     if (a && a != PROTO_NONE) {
         const proto::ProtoSparseList* sl = a->asSparseList(ctx);
         if (sl) return sl;
@@ -77,7 +77,7 @@ static void active_set(proto::ProtoContext* ctx,
                        const proto::ProtoSparseList* sl) {
     if (!mod || mod == PROTO_NONE) return;
     const_cast<proto::ProtoObject*>(mod)->setAttribute(ctx,
-        sym(ctx, "__active__"), sl->asObject(ctx));
+        sym(ctx, "\001__active__"), sl->asObject(ctx));
 }
 
 // Lookup helper: read self._wr_key, look up in module's active set,
@@ -185,7 +185,7 @@ static const proto::ProtoObject* py_weakref_ref(
                 || c == env->getFloatPrototype()
                 || c == env->getComplexPrototype()
                 || c == env->getStrPrototype()
-                || c == env->getBytesPrototype()
+                || env->isBytesOrBytearrayType(c)
                 || c == env->getTuplePrototype()
                 || c == env->getFrozensetPrototype();
             // Classes (instances of type) are weak-referenceable, as in
@@ -490,7 +490,7 @@ static const proto::ProtoObject* py_weakref_remove_dead_weakref(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     proto::ProtoObject* mod = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-    mod->setAttribute(ctx, sym(ctx, "__active__"),
+    mod->setAttribute(ctx, sym(ctx, "\001__active__"),
         ctx->newSparseList()->asObject(ctx));
     mod->setAttribute(ctx, sym(ctx, "_reload_hook"), PROTO_NONE);
     mod->setAttribute(ctx, sym(ctx, "getweakrefcount"),

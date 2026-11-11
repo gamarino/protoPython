@@ -1,6 +1,6 @@
 code 0: <module> (03-conditionals.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code sign, line 2>  -> code 0.0
     #1   code    <code parity, line 10>  -> code 0.1

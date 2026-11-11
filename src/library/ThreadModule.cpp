@@ -832,7 +832,7 @@ static const proto::ProtoObject* py_start_joinable_thread(
     if (kwargs) {
         const proto::ProtoString* handleKey =
             proto::ProtoString::createSymbol(ctx, "handle");
-        proto::proto_ulong handleHash = handleKey->getHash(ctx);
+        proto::proto_ulong handleHash = PythonEnvironment::kwKey(ctx, handleKey);
         if (kwargs->has(ctx, handleHash)) {
             handle = kwargs->getAt(ctx, handleHash);
         }
@@ -864,7 +864,7 @@ static const proto::ProtoObject* py_start_joinable_thread(
     bool daemon = true;
     if (kwargs) {
         const proto::proto_ulong daemonHash =
-            proto::ProtoString::createSymbol(ctx, "daemon")->getHash(ctx);
+            PythonEnvironment::kwKey(ctx, proto::ProtoString::createSymbol(ctx, "daemon"));
         if (kwargs->has(ctx, daemonHash)) {
             const proto::ProtoObject* d = kwargs->getAt(ctx, daemonHash);
             daemon = !(d == PROTO_FALSE || d == PROTO_NONE ||

@@ -245,7 +245,7 @@ static const proto::ProtoObject* py_struct_time(
         ::protoPython::TupleView tup = seq ? ::protoPython::PythonEnvironment::tupleView(ctx, seq) : nullptr;
         if (!tup) {
             const proto::ProtoObject* data = seq ? seq->getAttribute(
-                ctx, PythonEnvironment::getInternedString(ctx, "__data__")) : nullptr;
+                ctx, PythonEnvironment::getInternedString(ctx, "\001__data__")) : nullptr;
             if (data) tup = ::protoPython::PythonEnvironment::tupleView(ctx, data);
         }
         const proto::ProtoList* lst = tup ? nullptr : (seq ? ::protoPython::listStorage(ctx, seq) : nullptr);

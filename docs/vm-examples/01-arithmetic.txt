@@ -1,6 +1,6 @@
 code 0: <module> (01-arithmetic.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 35: operand stack from 0
+  slots 36: operand stack from 0
   constants:
     #0   int     1
     #1   int     2

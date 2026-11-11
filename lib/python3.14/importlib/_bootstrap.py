@@ -1348,9 +1348,17 @@ def _find_and_load_unlocked(name, import_):
                 self._initializing = False
                 self._uninitialized_submodules = []
         native_spec = _NativeSpec(name)
+        # Only the absence of `name` itself means "not found": an error the
+        # module raised while executing (or a missing module it imports)
+        # propagates, as CPython's loaders let it.
         try:
             native_mod = _imp.create_builtin(native_spec)
-        except Exception:
+        except ModuleNotFoundError as exc:
+            # The loader's own "not found" for `name`; any other
+            # ModuleNotFoundError (a missing dependency, or one the module
+            # raised itself, even under its own name) propagates as it is.
+            if exc.name != name or exc.args != (f'{_ERR_MSG_PREFIX}{name!r}',):
+                raise
             native_mod = None
         if native_mod is not None:
             # CPython invariant: every loaded module has __spec__ set.

@@ -341,7 +341,7 @@ TEST(ExecutionEngineTest, BuildList) {
     proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, listToTuple(&ctx, constants), listToTuple(&ctx, bytecode), nullptr, frame);
     ASSERT_NE(result, nullptr);
-    const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__data__"));
+    const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "\001__data__"));
     ASSERT_NE(data, nullptr);
     const proto::ProtoList* list = data->asList(&ctx);
     ASSERT_NE(list, nullptr);
@@ -392,18 +392,17 @@ TEST(ExecutionEngineTest, BuildMap) {
     proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, listToTuple(&ctx, constants), listToTuple(&ctx, bytecode), nullptr, frame);
     ASSERT_NE(result, nullptr);
-    const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__data__"));
+    const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "\001__data__"));
     ASSERT_NE(data, nullptr);
     ASSERT_NE(data->asSparseList(&ctx), nullptr);
-    const proto::ProtoObject* keys = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__keys__"));
+    const proto::ProtoObject* keys = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "\001__keys__"));
     ASSERT_NE(keys, nullptr);
     ASSERT_NE(keys->asList(&ctx), nullptr);
     const proto::ProtoList* keysList = keys->asList(&ctx);
     EXPECT_EQ(keysList->getSize(&ctx), 2u);
-    proto::proto_ulong h0 = keysList->getAt(&ctx, 0)->getHash(&ctx);
-    proto::proto_ulong h1 = keysList->getAt(&ctx, 1)->getHash(&ctx);
-    const proto::ProtoObject* v0 = data->asSparseList(&ctx)->getAt(&ctx, h0);
-    const proto::ProtoObject* v1 = data->asSparseList(&ctx)->getAt(&ctx, h1);
+    // A str key's slot is a bucket beside its key: read through the helper.
+    const proto::ProtoObject* v0 = protoPython::PythonEnvironment::dictDataGet(&ctx, data->asSparseList(&ctx), keysList->getAt(&ctx, 0));
+    const proto::ProtoObject* v1 = protoPython::PythonEnvironment::dictDataGet(&ctx, data->asSparseList(&ctx), keysList->getAt(&ctx, 1));
     ASSERT_NE(v0, nullptr);
     ASSERT_NE(v1, nullptr);
     proto::proto_long a0 = v0->asLong(&ctx);
@@ -1196,7 +1195,7 @@ TEST(ExecutionEngineTest, CompiledListLiteral) {
     ASSERT_NE(result, nullptr);
     ASSERT_NE(result, PROTO_NONE);
     const proto::ProtoObject* data = result->getAttribute(&ctx,
-        proto::ProtoString::fromUTF8String(&ctx, "__data__"));
+        proto::ProtoString::fromUTF8String(&ctx, "\001__data__"));
     ASSERT_NE(data, nullptr);
     const proto::ProtoList* list = data->asList(&ctx);
     ASSERT_NE(list, nullptr);
@@ -1261,4 +1260,116 @@ TEST(ExecutionEngineTest, ConcurrentExecutionTwoThreads) {
     EXPECT_TRUE(bVal->isInteger(ctx));
     EXPECT_EQ(aVal->asLong(ctx), 1);
     EXPECT_EQ(bVal->asLong(ctx), 2);
+}
+
+// dictBucket (PythonEnvironment.cpp) recognises a bucket by protoCore's
+// ProtoMap pointer tag, a constant of protoCore's internal header: a real
+// ProtoMap must carry it.
+TEST(ExecutionEngineTest, DictBucketTagMatchesProtoMap) {
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoMap* m = ctx->newMap();
+    ASSERT_NE(m, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(m->asObject(ctx)) & 0x3F, 27u);
+}
+
+// A dict or set indexes a key by its Python hash h: the SmallInteger tagged
+// word of h when h fits one, else h. A str and the int whose word is the
+// str's index share it; an int other than -1 keeps its own word.
+TEST(ExecutionEngineTest, DictKeyIndexFollowsPythonHash) {
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    auto index = [&](const proto::ProtoObject* key) {
+        proto::proto_ulong h = 0;
+        EXPECT_TRUE(protoPython::PythonEnvironment::hashKey(ctx, key, h));
+        return h;
+    };
+    auto word = [](long long v) {
+        return static_cast<proto::proto_ulong>(reinterpret_cast<uintptr_t>(proto::makeSmallInt(v)));
+    };
+    EXPECT_EQ(index(ctx->fromInteger(5)), word(5));
+    EXPECT_EQ(index(ctx->fromInteger(-1)), word(-2));
+    EXPECT_EQ(index(PROTO_TRUE), word(1));
+    EXPECT_EQ(index(ctx->fromDouble(3.0)), word(3));
+    for (int i = 0; i < 4096; ++i) {
+        const proto::ProtoObject* s = ctx->fromUTF8String(("k" + std::to_string(i)).c_str());
+        const long long h = static_cast<long long>(s->getHash(ctx));
+        const proto::proto_ulong expected = proto::smallIntInRange(h) ? word(h) : static_cast<proto::proto_ulong>(h);
+        ASSERT_EQ(index(s), expected) << i;
+    }
+}
+
+// Keyword arguments from a C++ caller follow protoCore's calling convention:
+// each pair names the keyword by its interned symbol, which protoPython
+// matches by pointer (docs/CALLING_CONVENTION.md, rule 3).
+TEST(ExecutionEngineTest, KeywordArgumentsFromCppByNamePointer) {
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    // The probes are published on `sys`, a module C++ reaches by name.
+    ASSERT_EQ(env.executeString(
+        "import sys\n"
+        "def kwprobe(a, *, b=0, **rest):\n"
+        "    return (a, b, sorted(rest.items()))\n"
+        "sys.kwprobe = kwprobe\n"
+        "sys.kwdict = {}\n", "<kwprobe>"), 0);
+    const proto::ProtoObject* sysm = env.resolve("sys", ctx);
+    ASSERT_NE(sysm, nullptr);
+    const proto::ProtoObject* f = sysm->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "kwprobe"));
+    ASSERT_NE(f, nullptr);
+    ASSERT_NE(f, PROTO_NONE);
+    const proto::ProtoObject* argv[1] = {ctx->fromInteger(1)};
+    // "extra" fits an inline string; "long_keyword_name" (more than six
+    // bytes) is a heap string: both keywords are found by the interned
+    // name's pointer.
+    const proto::ProtoKeywordArgument pairs[3] = {
+        {proto::ProtoString::createSymbol(ctx, "b"), ctx->fromInteger(2)},
+        {proto::ProtoString::createSymbol(ctx, "extra"), ctx->fromInteger(3)},
+        {proto::ProtoString::createSymbol(ctx, "long_keyword_name"), ctx->fromInteger(4)},
+    };
+    proto::ProtoArguments args(argv, 1);
+    proto::ProtoKeywordArguments kwargs(pairs, 3);
+    const proto::ProtoObject* r = protoPython::invokePythonCallable(ctx, f, &args, &kwargs);
+    ASSERT_NE(r, nullptr);
+    env.setAttribute(ctx, sysm, proto::ProtoString::createSymbol(ctx, "kwresult"), r);
+    ASSERT_EQ(env.executeString(
+        "import sys\n"
+        "assert sys.kwresult == (1, 2, [('extra', 3), ('long_keyword_name', 4)]), sys.kwresult\n", "<kwcheck>"), 0);
+
+    // A built-in that enumerates its keywords (dict.update) reads the pairs.
+    const proto::ProtoObject* d = sysm->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "kwdict"));
+    ASSERT_NE(d, nullptr);
+    const proto::ProtoObject* upd = d->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "update"));
+    ASSERT_NE(upd, nullptr);
+    ASSERT_NE(upd->asMethod(ctx), nullptr);
+    proto::ProtoArguments none(nullptr, 0);
+    upd->asMethod(ctx)(ctx, d, nullptr, &none, &kwargs);
+    ASSERT_EQ(env.executeString(
+        "import sys\n"
+        "assert sys.kwdict == {'b': 2, 'extra': 3, 'long_keyword_name': 4}, sys.kwdict\n", "<kwcheck2>"), 0);
+}
+
+namespace proto { proto_ulong globalSymbolCount(); }
+
+// Probing a module namespace for a name it does not bind (`name in
+// globals()`, `globals().get(name)`) reads by content: it does not intern
+// the probed name, which would stay in the symbol table for the life of the
+// process.
+TEST(ExecutionEngineTest, NamespaceProbeMissDoesNotInternTheName) {
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    ASSERT_EQ(env.executeString(
+        "def probe(n):\n"
+        "    g = globals()\n"
+        "    hits = 0\n"
+        "    for i in range(n):\n"
+        "        name = 'unbound_probe_name_' + str(i) + '_with_a_long_tail'\n"
+        "        if name in g: hits += 1\n"
+        "        if g.get(name) is not None: hits += 1\n"
+        "    return hits\n"
+        "assert probe(50) == 0\n", "<probe-warmup>"), 0);
+    const proto::proto_ulong before = proto::globalSymbolCount();
+    ASSERT_EQ(env.executeString("assert probe(2000) == 0\n", "<probe>"), 0);
+    const proto::proto_ulong after = proto::globalSymbolCount();
+    // 2000 distinct names were probed; a few symbols may come from the
+    // compilation of the snippet itself.
+    EXPECT_LT(after - before, 100u) << "symbols before " << before << ", after " << after;
 }

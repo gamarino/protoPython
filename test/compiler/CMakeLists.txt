@@ -135,6 +135,16 @@ set_tests_properties(protopyc_loop_else PROPERTIES
     TIMEOUT 300
     LABELS "regression_gate")
 
+# f-string fields keep their conversion and format spec in compiled code.
+add_test(NAME protopyc_fstring
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/protopyc_fstring.sh
+            $<TARGET_FILE:protopyc> $<TARGET_FILE:protopy>
+            ${CMAKE_CURRENT_SOURCE_DIR}/fstring_probe.py)
+set_tests_properties(protopyc_fstring PROPERTIES
+    TIMEOUT 300
+    PASS_REGULAR_EXPRESSION "protopyc fstring OK"
+    LABELS "regression_gate")
+
 # Code protopyc generates keeps every live object visible to the collector:
 # compiled modules with allocating loops run correctly while collections run
 # (protoPython issue #2).

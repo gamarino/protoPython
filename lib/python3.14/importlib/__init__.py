@@ -132,9 +132,23 @@ def reload(module):
         else:
             pkgpath = None
         target = module
-        spec = module.__spec__ = _bootstrap._find_spec(name, pkgpath, target)
+        spec = _bootstrap._find_spec(name, pkgpath, target)
         if spec is None:
-            raise ModuleNotFoundError(f"spec not found for the module {name!r}", name=name)
+            # protoPython: sys.meta_path has no filesystem finder; the
+            # native import system loaded the module.  Re-run its source in
+            # the existing namespace, as SourceLoader.exec_module does; a
+            # built-in module (no source file) is returned unchanged, as
+            # CPython's exec_builtin leaves it.
+            source_path = getattr(module, '__file__', None)
+            if source_path is None or not source_path.endswith('.py'):
+                if name in sys.modules:
+                    return sys.modules[name]
+                raise ModuleNotFoundError(f"spec not found for the module {name!r}", name=name)
+            with open(source_path, 'rb') as source_file:
+                code = compile(source_file.read(), source_path, 'exec')
+            exec(code, module.__dict__)
+            return sys.modules[name]
+        module.__spec__ = spec
         _bootstrap._exec(spec, module)
         # The module may have replaced itself in sys.modules!
         return sys.modules[name]

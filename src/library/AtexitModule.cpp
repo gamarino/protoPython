@@ -37,7 +37,7 @@ static const proto::ProtoString* sym(proto::ProtoContext* ctx, const char* name)
 // build time; structural lists are mutable and avoid the round-trip.
 static const proto::ProtoObject* handlers_get_list(
     proto::ProtoContext* ctx, const proto::ProtoObject* mod) {
-    const proto::ProtoObject* lst = mod->getAttribute(ctx, sym(ctx, "__atexit_handlers__"));
+    const proto::ProtoObject* lst = mod->getAttribute(ctx, sym(ctx, "\001__atexit_handlers__"));
     if (lst && lst != PROTO_NONE && ::protoPython::listStorage(ctx, lst)) return lst;
     return nullptr;
 }
@@ -69,7 +69,7 @@ static const proto::ProtoObject* py_register(
     const proto::ProtoList* lst = listObj ? ::protoPython::listStorage(ctx, listObj) : ctx->newList();
     lst = lst->appendLast(ctx, entry->asObject(ctx));
     proto::ProtoObject* mself = const_cast<proto::ProtoObject*>(self);
-    mself->setAttribute(ctx, sym(ctx, "__atexit_handlers__"), lst->asObject(ctx));
+    mself->setAttribute(ctx, sym(ctx, "\001__atexit_handlers__"), lst->asObject(ctx));
 
     // CPython returns the callable so `@atexit.register` works as a
     // decorator. The previous stub returned PROTO_NONE which broke
@@ -102,7 +102,7 @@ static const proto::ProtoObject* py_unregister(
         }
     }
     proto::ProtoObject* mself = const_cast<proto::ProtoObject*>(self);
-    mself->setAttribute(ctx, sym(ctx, "__atexit_handlers__"), kept->asObject(ctx));
+    mself->setAttribute(ctx, sym(ctx, "\001__atexit_handlers__"), kept->asObject(ctx));
     return PROTO_NONE;
 }
 
@@ -152,7 +152,7 @@ static const proto::ProtoObject* py_run_exitfuncs(
     // Clear the list so a second run_exitfuncs (e.g. from a re-init
     // path) doesn't re-fire handlers.
     proto::ProtoObject* mself = const_cast<proto::ProtoObject*>(self);
-    mself->setAttribute(ctx, sym(ctx, "__atexit_handlers__"),
+    mself->setAttribute(ctx, sym(ctx, "\001__atexit_handlers__"),
         ctx->newList()->asObject(ctx));
     return PROTO_NONE;
 }
@@ -166,7 +166,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     // Pre-seed the handler list so handlers_get_list always sees a
     // valid list (no PROTO_NONE on first register call).
-    mod = mod->setAttribute(ctx, sym(ctx, "__atexit_handlers__"),
+    mod = mod->setAttribute(ctx, sym(ctx, "\001__atexit_handlers__"),
         ctx->newList()->asObject(ctx));
     mod = mod->setAttribute(ctx, sym(ctx, "register"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_register));

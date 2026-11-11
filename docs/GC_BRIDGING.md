@@ -213,6 +213,8 @@ For every native function you write or modify, answer these questions:
 | Does it call `env->callObject` or `invokePythonCallable`? | Pin every `ProtoObject*` argument and the running result. |
 | Does it loop calling user code while holding an accumulator? | Pin the accumulator on each iteration. |
 | Does it call a user `__getitem__`, `__contains__` or similar method? | Pin the receiver if it is only held on the C++ stack. |
+| Does it read a container's storage (a dict's or set's `__data__`, a list's items) and then run user code (`__eq__`, `__hash__`, a key function) before it is done with that storage? | Pin the storage version it reads: the user code may replace the container's storage, and the old version is then held only by C++ locals. |
+| Does it gather values in a C++ container (`std::vector`) across user code? | Pin each value (`PythonEnvironment::TransientPinSet`). |
 | Is the value reachable through the argument list, which `invokeCallable` already pins? | No additional pin is needed. |
 | Is the value reachable through the operand stack, as in a peek-only opcode such as `OP_FOR_ITER`? | No additional pin is needed. |
 
@@ -243,6 +245,56 @@ For every native function you write or modify, answer these questions:
   hold across calls to the user function.
 - The `OP_LIST_EXTEND`, `OP_DICT_UPDATE`, `OP_UNPACK_SEQUENCE` and
   `OP_UNPACK_EX` handlers (`ExecutionEngine.cpp`) pin their internal iterators.
+- Container storage across user `__eq__` (1.2.2): the dict and set lookup,
+  insertion and removal helpers (`StoragePin` in `dictFind`, `dictPut`,
+  `dictRemove`, `setFind`, `setPut`, `setRemove`), the dict writers' snapshot
+  loops, `SetCursor` (set algebra and subset tests), `in` over lists and
+  iterators, `list.index` / `count` / `remove` / `sort`, list, tuple and dict
+  comparison, `sorted`, `min` and `max` (values and keys through
+  `TransientPinSet`), the dict views' membership and set operations, and
+  `vars(module).update()`. A dict or set lookup restarts only when a
+  comparison replaced the table or changed the slot it compared, as CPython's
+  does; test/regression/eq_mutates_container.py and gc_pins_lists.py run these
+  paths with a collection inside every comparison.
+- Lazy pins (1.2.2): these sites do not pin on entry. `LazyComparePins` and
+  `LazyPinSet` (`PythonEnvironment.h`) record what must stay reachable and pin
+  it only before the first comparison whose operands are not trivial (a `str`
+  or an embedded value: `int`, `float`, `bool`, `None`), the first point where
+  Python code can run; a walk over trivial values never touches the pin
+  tables. Code that may run Python code below such a site without passing
+  through it (`compareObjects`, a user `__hash__` or `__repr__`) arms the
+  innermost pending site through `LazyComparePins::armAmbient()`, a
+  thread-local chain of the sites in progress. A new site that holds storage
+  across a call into Python either declares a `LazyComparePins` and calls
+  `beforeCompare` before each comparison, or pins eagerly with
+  `TransientPin`.
+
+  The lazy pins rest on one assumption: a trivial comparison neither
+  allocates nor reaches a safepoint, so no collection can run during a walk
+  that has not pinned yet. That covers the hazard the pins exist for, a
+  comparison on the same thread that replaces the storage being walked. It
+  does not cover a storage version that another thread replaces during an
+  all-trivial walk: that version is unpinned until the walk ends, as it was
+  before 1.2.2 (no failure has been reproduced). A change that makes a
+  trivial comparison allocate (a `str` comparison that builds a temporary,
+  for instance) or poll a safepoint breaks the assumption, and such a site
+  must then pin before it compares.
+- bytearray storage (1.2.2): a bytearray's content is a persistent list of
+  byte chunks published by compare-and-swap (`src/library/BytearrayType.cpp`).
+  A writer (`mutate()`) reads the current version, derives the next one,
+  which allocates, and publishes it only if the version it read is still
+  current. The version it read is not pinned, which is the discipline lists
+  follow in `publishListData`: if another thread publishes a newer version
+  and a collection runs during the derivation, the version read is
+  unreachable and can be reclaimed while it is still being read, and a
+  reallocated cell at the same address could in principle let the CAS
+  succeed against stale content (ABA). No failure has been reproduced
+  (concurrent append/pop, rewrite/read, lane writes, memoryview lanes and
+  iteration during `extend`, at the default threshold and at
+  `PROTOCORE_GC_CONTEXT_THRESHOLD=100`). Readers that must see one version
+  (`bytes(ba)`, `bytesLikeContent`, a memoryview read) take one snapshot of
+  the list and read only it. The same assumption covers lists; removing it
+  for both means pinning the version read before deriving from it.
 
 When you add a native function that iterates or calls back into Python, follow
 the same pattern. The audit in [docs/audits/03-gc-roots.md](audits/03-gc-roots.md)

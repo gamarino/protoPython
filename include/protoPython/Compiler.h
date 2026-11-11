@@ -18,6 +18,12 @@ constexpr int CO_NEWLOCALS = 2;
 constexpr int CO_VARARGS = 4;
 constexpr int CO_VARKEYWORDS = 8;
 constexpr int CO_NESTED = 16;
+/** protoPython's own flag: a list, set or dict comprehension whose
+ *  enclosing scope is a name scope (module, eval or exec code, or another
+ *  such comprehension). CPython inlines it (PEP 709), so its free names
+ *  resolve as the enclosing LOAD_NAME would: in eval / exec, in the locals
+ *  mapping first (PythonEnvironment::nameScopeComprehensionGlobals). */
+constexpr int CO_NAME_SCOPE_COMPREHENSION = 0x10000000;
 
 /** Compiles AST to protoPython bytecode (constants list, names list, flat bytecode). */
 class Compiler {
@@ -205,6 +211,8 @@ private:
     bool isGenerator_ = false;
     bool isClassBody_ = false;
     bool isFunctionScope_ = false;
+    /** A comprehension compiled at a name scope (CO_NAME_SCOPE_COMPREHENSION). */
+    bool nameScopeComprehension_ = false;
     bool isAsyncFunction_ = false;  // PC2: tracking for yield-from check (PEP 525)
     bool forceMapped_ = false;
     /** Mangled names of the function's parameters (positional, keyword-only,

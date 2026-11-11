@@ -82,7 +82,7 @@ const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalP
         mod = mod->setAttribute(ctx, key("__file__"), key(foundPath)->asObject(ctx));
         mod = mod->setAttribute(ctx, key("__name__"), key(logicalPath)->asObject(ctx));
         mod = mod->setAttribute(ctx, key("__loader__"), key("HPyModuleProvider")->asObject(ctx));
-        mod = mod->setAttribute(ctx, key("__executed__"), PROTO_TRUE);
+        mod = mod->setAttribute(ctx, key("\001__executed__"), PROTO_TRUE);
     }
     return mod;
 }

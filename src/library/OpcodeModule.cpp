@@ -68,7 +68,7 @@ static const proto::ProtoObject* py_stack_effect(
     const unsigned long n = args ? static_cast<unsigned long>(args->getSize(ctx)) : 0;
     auto keyword = [&](const char* name) -> const proto::ProtoObject* {
         if (!kwargs) return nullptr;
-        const proto::proto_ulong h = PythonEnvironment::getInternedString(ctx, name)->getHash(ctx);
+        const proto::proto_ulong h = PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, name));
         return kwargs->has(ctx, h) ? kwargs->getAt(ctx, h) : nullptr;
     };
     if (n < 1 || n > 2) {
@@ -156,7 +156,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         if (env && opmap) {
             env->setItem(opmap, k->asObject(ctx), ctx->fromInteger(pair.second));
         } else {
-            opmap = opmap->setAttribute(ctx, k, ctx->fromInteger(pair.second));
+            opmap = opmap->setAttribute(ctx, k, ctx->fromInteger(pair.second));  // raw-key: a name from a C++ table
         }
         if (pair.second > maxOp) maxOp = pair.second;
     }
@@ -183,7 +183,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         opname_obj = const_cast<proto::ProtoObject*>(opname_obj->addParent(ctx, env->getListPrototype()));
         opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getListPrototype()));
     }
-    opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"), opname_list->asObject(ctx)));
+    opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__data__"), opname_list->asObject(ctx)));
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "opname"), opname_obj);
 

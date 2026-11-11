@@ -259,19 +259,16 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
     # For pickling to work, the __module__ variable needs to be set to the frame
     # where the named tuple is created.  Bypass this step in environments where
     if module is None:
+        # CPython 3.14: the calling scope's module (_getframe(1) read the
+        # wrong frame under exec(), and pickling looked the class up in
+        # 'collections').
         try:
-            # print("DEBUG: TRACE 10.1: calling _sys._getframe(1)")
-            frame = _sys._getframe(1)
-            # print("DEBUG: TRACE 10.2: got frame", frame)
-            f_globals = frame.f_globals
-            # print("DEBUG: TRACE 10.3: got f_globals", f_globals)
-            module = f_globals.get('__name__', '__main__')
-            # print("DEBUG: TRACE 10.4: got module", module)
-        except (AttributeError, ValueError) as e:
-            pass
-        except Exception as e:
-            # print("DEBUG: TRACE 10.EXCEPT (OTHER):", repr(e))
-            raise
+            module = _sys._getframemodulename(1) or '__main__'
+        except AttributeError:
+            try:
+                module = _sys._getframe(1).f_globals.get('__name__', '__main__')
+            except (AttributeError, ValueError):
+                pass
     if module is not None:
         result.__module__ = module
 

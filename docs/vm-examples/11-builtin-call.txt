@@ -1,6 +1,6 @@
 code 0: <module> (11-builtin-call.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code size, line 2>  -> code 0.0
     #1   NoneType None
@@ -15,7 +15,7 @@ code 0: <module> (11-builtin-call.py, line 1)
 
 code 0.0: size (11-builtin-call.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 131: variables 0..0, operand stack from 1
+  slots 132: variables 0..0, operand stack from 1
   constants:
     #0   none    None
   names:

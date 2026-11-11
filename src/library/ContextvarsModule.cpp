@@ -43,24 +43,24 @@ static const proto::ProtoObject* cv_call(proto::ProtoContext* ctx,
     const proto::ProtoObject* inst = ctx->newObject(false);
     inst = inst->addParent(ctx, self);
     if (pos && pos->getSize(ctx) >= 1) {
-        inst = inst->setAttribute(ctx, sym(ctx, "__cv_name__"), pos->getAt(ctx, 0));
+        inst = inst->setAttribute(ctx, sym(ctx, "\001__cv_name__"), pos->getAt(ctx, 0));
         inst = inst->setAttribute(ctx, sym(ctx, "name"), pos->getAt(ctx, 0));
     }
     // Optional positional `default` (CPython makes this kw-only but
     // accepts it positionally pre-3.10 too; we tolerate either).
     if (pos && pos->getSize(ctx) >= 2) {
-        inst = inst->setAttribute(ctx, sym(ctx, "__cv_default__"), pos->getAt(ctx, 1));
-        inst = inst->setAttribute(ctx, sym(ctx, "__cv_has_default__"), PROTO_TRUE);
+        inst = inst->setAttribute(ctx, sym(ctx, "\001__cv_default__"), pos->getAt(ctx, 1));
+        inst = inst->setAttribute(ctx, sym(ctx, "\001__cv_has_default__"), PROTO_TRUE);
     }
     if (kw) {
         const proto::ProtoString* defKey = sym(ctx, "default");
-        const proto::ProtoObject* defVal = kw->getAt(ctx, defKey->getHash(ctx));
+        const proto::ProtoObject* defVal = kw->getAt(ctx, PythonEnvironment::kwKey(ctx, defKey));
         if (defVal && defVal != PROTO_NONE) {
-            inst = inst->setAttribute(ctx, sym(ctx, "__cv_default__"), defVal);
-            inst = inst->setAttribute(ctx, sym(ctx, "__cv_has_default__"), PROTO_TRUE);
+            inst = inst->setAttribute(ctx, sym(ctx, "\001__cv_default__"), defVal);
+            inst = inst->setAttribute(ctx, sym(ctx, "\001__cv_has_default__"), PROTO_TRUE);
         }
     }
-    inst = inst->setAttribute(ctx, sym(ctx, "__cv_has_value__"), PROTO_FALSE);
+    inst = inst->setAttribute(ctx, sym(ctx, "\001__cv_has_value__"), PROTO_FALSE);
     return inst;
 }
 
@@ -73,17 +73,17 @@ static const proto::ProtoObject* cv_get(proto::ProtoContext* ctx,
                                         const proto::ProtoArguments* pos,
                                         const proto::ProtoKeywordArguments*) {
     if (!self) return PROTO_NONE;
-    const proto::ProtoObject* hasVal = self->getAttribute(ctx, sym(ctx, "__cv_has_value__"));
+    const proto::ProtoObject* hasVal = self->getAttribute(ctx, sym(ctx, "\001__cv_has_value__"));
     if (hasVal == PROTO_TRUE) {
-        return self->getAttribute(ctx, sym(ctx, "__cv_value__"));
+        return self->getAttribute(ctx, sym(ctx, "\001__cv_value__"));
     }
     // Explicit default takes precedence over constructor default.
     if (pos && pos->getSize(ctx) >= 1) {
         return pos->getAt(ctx, 0);
     }
-    const proto::ProtoObject* hasDef = self->getAttribute(ctx, sym(ctx, "__cv_has_default__"));
+    const proto::ProtoObject* hasDef = self->getAttribute(ctx, sym(ctx, "\001__cv_has_default__"));
     if (hasDef == PROTO_TRUE) {
-        return self->getAttribute(ctx, sym(ctx, "__cv_default__"));
+        return self->getAttribute(ctx, sym(ctx, "\001__cv_default__"));
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
@@ -112,12 +112,12 @@ static const proto::ProtoObject* cv_set(proto::ProtoContext* ctx,
     // Snapshot the current state into a Token before overwriting.
     const proto::ProtoObject* token = ctx->newObject(false);
     token = token->setAttribute(ctx, sym(ctx, "var"), self);
-    const proto::ProtoObject* hadVal = self->getAttribute(ctx, sym(ctx, "__cv_has_value__"));
-    token = token->setAttribute(ctx, sym(ctx, "__tok_had_value__"),
+    const proto::ProtoObject* hadVal = self->getAttribute(ctx, sym(ctx, "\001__cv_has_value__"));
+    token = token->setAttribute(ctx, sym(ctx, "\001__tok_had_value__"),
                                 hadVal == PROTO_TRUE ? PROTO_TRUE : PROTO_FALSE);
     if (hadVal == PROTO_TRUE) {
         token = token->setAttribute(ctx, sym(ctx, "old_value"),
-            self->getAttribute(ctx, sym(ctx, "__cv_value__")));
+            self->getAttribute(ctx, sym(ctx, "\001__cv_value__")));
     } else {
         // CPython's MISSING sentinel — we use PROTO_NONE as a stand-in
         // and gate read access behind __tok_had_value__ to disambiguate
@@ -130,8 +130,8 @@ static const proto::ProtoObject* cv_set(proto::ProtoContext* ctx,
     // would break identity (`var.get() is var.get()` after a single
     // set should be True).
     proto::ProtoObject* mself = const_cast<proto::ProtoObject*>(self);
-    mself->setAttribute(ctx, sym(ctx, "__cv_value__"), newVal);
-    mself->setAttribute(ctx, sym(ctx, "__cv_has_value__"), PROTO_TRUE);
+    mself->setAttribute(ctx, sym(ctx, "\001__cv_value__"), newVal);
+    mself->setAttribute(ctx, sym(ctx, "\001__cv_has_value__"), PROTO_TRUE);
     return token;
 }
 
@@ -155,15 +155,15 @@ static const proto::ProtoObject* cv_reset(proto::ProtoContext* ctx,
                 "Token was created by a different ContextVar")->asObject(ctx));
         return nullptr;
     }
-    const proto::ProtoObject* hadVal = token->getAttribute(ctx, sym(ctx, "__tok_had_value__"));
+    const proto::ProtoObject* hadVal = token->getAttribute(ctx, sym(ctx, "\001__tok_had_value__"));
     proto::ProtoObject* mself = const_cast<proto::ProtoObject*>(self);
     if (hadVal == PROTO_TRUE) {
-        mself->setAttribute(ctx, sym(ctx, "__cv_value__"),
+        mself->setAttribute(ctx, sym(ctx, "\001__cv_value__"),
             token->getAttribute(ctx, sym(ctx, "old_value")));
-        mself->setAttribute(ctx, sym(ctx, "__cv_has_value__"), PROTO_TRUE);
+        mself->setAttribute(ctx, sym(ctx, "\001__cv_has_value__"), PROTO_TRUE);
     } else {
-        mself->setAttribute(ctx, sym(ctx, "__cv_has_value__"), PROTO_FALSE);
-        mself->setAttribute(ctx, sym(ctx, "__cv_value__"), PROTO_NONE);
+        mself->setAttribute(ctx, sym(ctx, "\001__cv_has_value__"), PROTO_FALSE);
+        mself->setAttribute(ctx, sym(ctx, "\001__cv_value__"), PROTO_NONE);
     }
     return PROTO_NONE;
 }

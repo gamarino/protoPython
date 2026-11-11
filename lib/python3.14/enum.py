@@ -543,7 +543,41 @@ class EnumType(type):
         # (CPython 3.12+ does this)
         if hasattr(enum_class, '__init_subclass__'):
             classdict.update(_getattr(enum_class, '__dict__', {}))
-        
+        #
+        # double check that repr and friends are not the mixin's or various
+        # things break (such as pickle); a method defined in the Enum itself
+        # is kept. ReprEnum leaves str() and format() to the data type.
+        # (CPython 3.14's EnumType.__new__.)
+        if ReprEnum is not None and ReprEnum in bases:
+            if member_type is object:
+                raise TypeError(
+                        'ReprEnum subclasses must be mixed with a data type (i.e.'
+                        ' int, str, float, etc.)'
+                        )
+            if '__format__' not in classdict:
+                enum_class.__format__ = member_type.__format__
+                classdict['__format__'] = enum_class.__format__
+            if '__str__' not in classdict:
+                method = member_type.__str__
+                # A data type without its own __str__ shows its __repr__.
+                # protoPython's int and float carry a __str__ slot with
+                # object.__str__'s meaning (CPython's have none), so they
+                # count as not defining one.
+                if method is object.__str__ or method is int.__str__ or method is float.__str__:
+                    method = member_type.__repr__
+                enum_class.__str__ = method
+                classdict['__str__'] = enum_class.__str__
+        if first_enum is not None:
+            for name in ('__repr__', '__str__', '__format__', '__reduce_ex__'):
+                if name not in classdict:
+                    # check for mixin overrides before replacing
+                    enum_method = _getattr(first_enum, name)
+                    found_method = _getattr(enum_class, name)
+                    object_method = _getattr(object, name)
+                    data_type_method = _getattr(member_type, name)
+                    if found_method in (data_type_method, object_method):
+                        _setattr(enum_class, name, enum_method)
+
         # for Flag, add __or__, __and__, __xor__, and __invert__
         if Flag is not None and _issubclass(enum_class, Flag):
             for name in (

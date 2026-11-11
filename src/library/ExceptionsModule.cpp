@@ -364,6 +364,145 @@ static const proto::ProtoObject* oserror_str(
     return proto::ProtoString::fromUTF8(context, text.c_str())->asObject(context);
 }
 
+// UnicodeEncodeError(encoding, object, start, end, reason),
+// UnicodeDecodeError(encoding, object, start, end, reason) and
+// UnicodeTranslateError(object, start, end, reason): the arguments become
+// the attributes codec error handlers read (exc.start, exc.end, ...), and
+// __str__ is CPython's message. kind: 0 encode, 1 decode, 2 translate.
+template <int kind>
+static const proto::ProtoObject* unicodeerror_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
+    exception_init(context, self, parentLink, positionalParameters, keywordParameters);
+    const proto::ProtoObject* instance = self;
+    unsigned first = 0;
+    if (!instance || instance == PROTO_NONE) {
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) return PROTO_NONE;
+        instance = positionalParameters->getAt(context, 0);
+        first = 1;
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::proto_ulong n = positionalParameters ? positionalParameters->getSize(context) - first : 0;
+    const proto::proto_ulong want = kind == 2 ? 4 : 5;
+    const char* typeName = kind == 0 ? "UnicodeEncodeError" : kind == 1 ? "UnicodeDecodeError" : "UnicodeTranslateError";
+    if (n != want) {
+        if (env) env->raiseTypeError(context, std::string(typeName) + " expected " + std::to_string(want)
+                                              + " arguments, got " + std::to_string(n));
+        return nullptr;
+    }
+    auto at = [&](unsigned i) { return positionalParameters->getAt(context, static_cast<int>(first + i)); };
+    const unsigned o = kind == 2 ? 0 : 1;
+    auto fail = [&](unsigned argNo, const char* expected) -> const proto::ProtoObject* {
+        if (env) env->raiseTypeError(context, std::string(typeName) + "() argument " + std::to_string(argNo + 1)
+                                              + " must be " + expected + ", not "
+                                              + PythonEnvironment::typeNameOf(context, at(argNo)));
+        return nullptr;
+    };
+    if (kind != 2 && !at(0)->isString(context)) return fail(0, "str");
+    if (kind == 1) {
+        if (!PythonEnvironment::isBytesLike(context, at(1))) return fail(1, "bytes-like object");
+    } else if (!at(o)->isString(context)) {
+        return fail(o, "str");
+    }
+    if (!at(o + 1)->isInteger(context)) return fail(o + 1, "int");
+    if (!at(o + 2)->isInteger(context)) return fail(o + 2, "int");
+    if (!at(o + 3)->isString(context)) return fail(o + 3, "str");
+    auto set = [&](const char* name, const proto::ProtoObject* value) {
+        instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+            PythonEnvironment::getInternedString(context, name), value);
+    };
+    if (kind != 2) set("encoding", at(0));
+    const proto::ProtoObject* object = at(o);
+    if (kind == 1 && env && env->getType(context, object) != env->getBytesPrototype()) {
+        // The object attribute is bytes, as CPython converts a buffer.
+        std::string content;
+        PythonEnvironment::bytesLikeContent(context, object, content);
+        object = PythonEnvironment::newBytes(context, content.data(), content.size());
+    }
+    set("object", object);
+    set("start", at(o + 1));
+    set("end", at(o + 2));
+    set("reason", at(o + 3));
+    return PROTO_NONE;
+}
+
+template <int kind>
+static const proto::ProtoObject* unicodeerror_str(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoArguments* positionalParameters,
+    const proto::ProtoKeywordArguments* keywordParameters) {
+    const proto::ProtoObject* instance = self;
+    if (!instance || instance == PROTO_NONE) {
+        if (!positionalParameters || positionalParameters->getSize(context) == 0)
+            return exception_str(context, self, parentLink, positionalParameters, keywordParameters);
+        instance = positionalParameters->getAt(context, 0);
+    }
+    auto attr = [&](const char* name) {
+        return instance->getAttribute(context, PythonEnvironment::getInternedString(context, name));
+    };
+    const proto::ProtoObject* object = attr("object");
+    const proto::ProtoObject* startO = attr("start");
+    const proto::ProtoObject* endO = attr("end");
+    const proto::ProtoObject* reasonO = attr("reason");
+    const proto::ProtoObject* encodingO = kind == 2 ? nullptr : attr("encoding");
+    if (!object || !startO || !endO || !reasonO || !startO->isInteger(context) || !endO->isInteger(context)
+        || !reasonO->isString(context) || (kind != 2 && (!encodingO || !encodingO->isString(context)))) {
+        return proto::ProtoString::fromUTF8(context, "")->asObject(context);
+    }
+    std::string reason, encoding;
+    reasonO->asString(context)->toUTF8String(context, reason);
+    if (encodingO) encodingO->asString(context)->toUTF8String(context, encoding);
+    const long long start = startO->asLong(context), end = endO->asLong(context);
+    std::string text;
+    char buf[64];
+    if (kind == 1) {
+        std::string bytes;
+        PythonEnvironment::bytesLikeContent(context, object, bytes);
+        if (start >= 0 && start < static_cast<long long>(bytes.size()) && end == start + 1) {
+            std::snprintf(buf, sizeof buf, "0x%02x", static_cast<unsigned char>(bytes[static_cast<size_t>(start)]));
+            text = "'" + encoding + "' codec can't decode byte " + buf + " in position " + std::to_string(start) + ": " + reason;
+        } else {
+            text = "'" + encoding + "' codec can't decode bytes in position " + std::to_string(start) + "-"
+                 + std::to_string(end - 1) + ": " + reason;
+        }
+    } else {
+        const proto::ProtoString* str = object->isString(context) ? object->asString(context) : nullptr;
+        const long long len = str ? static_cast<long long>(str->getSize(context)) : 0;
+        const std::string what = kind == 0 ? "encode" : "translate";
+        const std::string prefix = kind == 0 ? "'" + encoding + "' codec can't " + what : "can't " + what;
+        if (str && start >= 0 && start < len && end == start + 1) {
+            // The code point at index start of the UTF-8 storage.
+            std::string all;
+            str->toUTF8String(context, all);
+            unsigned int cp = 0;
+            size_t pos = 0;
+            for (long long index = 0; pos < all.size(); ++index) {
+                const unsigned char c = static_cast<unsigned char>(all[pos]);
+                const size_t extra = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
+                if (index == start) {
+                    cp = extra ? (c & (0x3F >> extra)) : c;
+                    for (size_t k = 1; k <= extra && pos + k < all.size(); ++k)
+                        cp = (cp << 6) | (static_cast<unsigned char>(all[pos + k]) & 0x3F);
+                    break;
+                }
+                pos += extra + 1;
+            }
+            if (cp <= 0xFF) std::snprintf(buf, sizeof buf, "\\x%02x", cp);
+            else if (cp <= 0xFFFF) std::snprintf(buf, sizeof buf, "\\u%04x", cp);
+            else std::snprintf(buf, sizeof buf, "\\U%08x", cp);
+            text = prefix + " character '" + buf + "' in position " + std::to_string(start) + ": " + reason;
+        } else {
+            text = prefix + " characters in position " + std::to_string(start) + "-" + std::to_string(end - 1) + ": " + reason;
+        }
+    }
+    return proto::ProtoString::fromUTF8(context, text.c_str())->asObject(context);
+}
+
 // KeyError.__str__: repr of a single argument, so a missing key reads as it
 // was written (str(KeyError('a')) == "'a'", and '' stays visible).
 static const proto::ProtoObject* keyerror_str(
@@ -461,7 +600,7 @@ static const proto::ProtoObject* importerror_init(
     }
     for (const char* attr : {"name", "path", "name_from"}) {
         const proto::ProtoString* key = PythonEnvironment::getInternedString(context, attr);
-        const proto::proto_ulong h = key->getHash(context);
+        const proto::proto_ulong h = PythonEnvironment::kwKey(context, key);
         const proto::ProtoObject* value = (keywordParameters && keywordParameters->has(context, h))
             ? keywordParameters->getAt(context, h) : PROTO_NONE;
         instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, key, value);
@@ -545,7 +684,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
             return nullptr;
         }
         const proto::ProtoString* notesS = PythonEnvironment::getInternedString(ctx, "__notes__");
-        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__");
+        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "\001__data__");
         const proto::ProtoObject* notesObj = self->getAttribute(ctx, notesS);
         const proto::ProtoList* underlying = nullptr;
         if (notesObj && notesObj != PROTO_NONE) {
@@ -748,6 +887,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* unicodeEncodeErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeEncodeError", unicodeErrorType);
     const proto::ProtoObject* unicodeDecodeErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeDecodeError", unicodeErrorType);
     const proto::ProtoObject* unicodeTranslateErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeTranslateError", unicodeErrorType);
+    {
+        const proto::ProtoString* initS = PythonEnvironment::getInternedString(ctx, "__init__");
+        const proto::ProtoString* strS = PythonEnvironment::getInternedString(ctx, "__str__");
+        unicodeEncodeErrorType->setAttribute(ctx, initS, ctx->fromMethod(nullptr, unicodeerror_init<0>));
+        unicodeEncodeErrorType->setAttribute(ctx, strS, ctx->fromMethod(nullptr, unicodeerror_str<0>));
+        unicodeDecodeErrorType->setAttribute(ctx, initS, ctx->fromMethod(nullptr, unicodeerror_init<1>));
+        unicodeDecodeErrorType->setAttribute(ctx, strS, ctx->fromMethod(nullptr, unicodeerror_str<1>));
+        unicodeTranslateErrorType->setAttribute(ctx, initS, ctx->fromMethod(nullptr, unicodeerror_init<2>));
+        unicodeTranslateErrorType->setAttribute(ctx, strS, ctx->fromMethod(nullptr, unicodeerror_str<2>));
+    }
 
     const proto::ProtoObject* baseExceptionGroupType = make_exception_type(ctx, objectProto, typeProto, "BaseExceptionGroup", baseExceptionType);
     const proto::ProtoObject* exceptionGroupType = make_exception_type(ctx, objectProto, typeProto, "ExceptionGroup", exceptionType);

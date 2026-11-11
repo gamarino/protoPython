@@ -188,7 +188,7 @@ const proto::ProtoObject* __moduleNamespace = nullptr;
 const proto::ProtoString* __moduleNsKeyCache = nullptr;
 
 const proto::ProtoString* __moduleNsKey(proto::ProtoContext* ctx) {
-    if (!__moduleNsKeyCache) __moduleNsKeyCache = protoPython::PythonEnvironment::getInternedString(ctx, "__module_ns__");
+    if (!__moduleNsKeyCache) __moduleNsKeyCache = protoPython::PythonEnvironment::getInternedString(ctx, "\001__module_ns__");
     return __moduleNsKeyCache;
 }
 
@@ -324,15 +324,15 @@ const proto::ProtoObject* __withDefaults(proto::ProtoContext* ctx, const proto::
     return fs->setAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, "__defaults__"), list->asObject(ctx));
 }
 
-// The default value of a keyword-only parameter, stored likewise (a sparse
-// list keyed by the name's hash).
+// The default value of a keyword-only parameter, stored likewise (dict
+// storage keyed by the name, PythonEnvironment::dictDataPut).
 const proto::ProtoObject* __withKwDefault(proto::ProtoContext* ctx, const proto::ProtoObject* fs,
                                           const char* name, const proto::ProtoObject* value) {
     const proto::ProtoString* key = protoPython::PythonEnvironment::getInternedString(ctx, "__kwdefaults__");
     const proto::ProtoObject* cur = fs->getAttribute(ctx, key);
     const proto::ProtoSparseList* map = (cur && cur != PROTO_NONE) ? cur->asSparseList(ctx) : nullptr;
-    if (!map) map = ctx->newSparseList();
-    map = map->setAt(ctx, protoPython::PythonEnvironment::getInternedString(ctx, name)->getHash(ctx), value);
+    map = protoPython::PythonEnvironment::dictDataPut(ctx, map,
+        protoPython::PythonEnvironment::getInternedString(ctx, name)->asObject(ctx), value);
     return fs->setAttribute(ctx, key, map->asObject(ctx));
 }
 
@@ -684,7 +684,7 @@ struct ScopeBuilder {
         if (auto* t = dynamic_cast<TupleLiteralNode*>(node)) { all(t->elements); return; }
         if (auto* st = dynamic_cast<SetLiteralNode*>(node)) { all(st->elements); return; }
         if (auto* d = dynamic_cast<DictLiteralNode*>(node)) { for (auto& k : d->keys) visit(k.get(), s); all(d->values); return; }
-        if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) { visit(fv->value.get(), s); return; }
+        if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) { visit(fv->value.get(), s); visit(fv->format_spec_node.get(), s); return; }
         if (auto* js = dynamic_cast<JoinedStrNode*>(node)) { all(js->values); return; }
         if (auto* aw = dynamic_cast<AwaitNode*>(node)) { visit(aw->value.get(), s); return; }
         if (auto* y = dynamic_cast<YieldNode*>(node)) { visit(y->value.get(), s); return; }
@@ -1438,8 +1438,8 @@ void CppGenerator::emitAssignName(const std::string& name, const std::string& va
     // through env->storeName to the current frame: the module namespace, or
     // the class namespace while a class body runs.  An internal name (a
     // method's storage key) is stored in the class namespace.
-    if (inClassBody_ && name.rfind("__protopyc_fs_", 0) == 0) {
-        *out_ << "env->storeName(\"" << name << "\", " << valueExpr << ")";
+    if (inClassBody_ && name.rfind("\001__protopyc_fs_", 0) == 0) {
+        *out_ << "env->storeName(\"" << escapeCppString(name) << "\", " << valueExpr << ")";
         return;
     }
     switch (nameKind(name)) {
@@ -1991,7 +1991,7 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
     // instance as `self`, and its storage is found through the instance's
     // class under this key (__methodStorage).
     const bool isMethod = oldInClassBody;
-    const std::string methodStorageKey = "__protopyc_fs_" + cppFuncName + "__";
+    const std::string methodStorageKey = "\001__protopyc_fs_" + cppFuncName + "__";
     // Zero-argument super() in the body binds to the first parameter of a
     // method; the qualified name of what the body defines continues this one.
     const std::string oldMethodSelfParam = methodSelfParam_;
@@ -2070,7 +2070,7 @@ bool CppGenerator::generateDef(DefNode* n, bool isAsync) {
             // perennial: the key is looked up once.
             *out_ << "    static const proto::ProtoString* __fsKey = nullptr;\n";
             *out_ << "    if (!__isStorage && !__fsKey) __fsKey = protoPython::PythonEnvironment::getInternedString(__callerCtx, \""
-                  << methodStorageKey << "\");\n";
+                  << escapeCppString(methodStorageKey) << "\");\n";
             *out_ << "    const proto::ProtoObject* __fs = __isStorage ? self : __methodStorage(__callerCtx, self, __fsKey);\n";
         } else {
             *out_ << "    const proto::ProtoObject* __fs = __isStorage ? self : nullptr;\n";
@@ -2646,16 +2646,18 @@ bool CppGenerator::generateDictLiteral(DictLiteralNode* n) {
             *out_ << "                auto* k = env->next(i);\n";
             *out_ << "                if (!k || k == PROTO_NONE) break;\n";
             *out_ << "                auto* v = env->getItem(unpacked, k);\n";
-            *out_ << "                data = data->setAt(ctx, k->getHash(ctx), v);\n";
-            *out_ << "                keys = keys->appendLast(ctx, k);\n";
+            *out_ << "                bool isNew = false;\n";
+            *out_ << "                data = protoPython::PythonEnvironment::dictDataPut(ctx, data, k, v, &isNew);\n";
+            *out_ << "                if (isNew) keys = keys->appendLast(ctx, k);\n";
             *out_ << "            }\n";
             *out_ << "        }\n";
         } else {
             *out_ << "        {\n";
             *out_ << "            auto* k = "; if (!generateNode(n->keys[i].get())) return false; *out_ << ";\n";
             *out_ << "            auto* v = "; if (!generateNode(n->values[i].get())) return false; *out_ << ";\n";
-            *out_ << "            data = data->setAt(ctx, k->getHash(ctx), v);\n";
-            *out_ << "            keys = keys->appendLast(ctx, k);\n";
+            *out_ << "            bool isNew = false;\n";
+            *out_ << "            data = protoPython::PythonEnvironment::dictDataPut(ctx, data, k, v, &isNew);\n";
+            *out_ << "            if (isNew) keys = keys->appendLast(ctx, k);\n";
             *out_ << "        }\n";
         }
     }
@@ -3250,7 +3252,20 @@ bool CppGenerator::generateJoinedStr(JoinedStrNode* n) {
 
 bool CppGenerator::generateFormattedValue(FormattedValueNode* n) {
     if (!n) return false;
-    return generateNode(n->value.get());
+    // The interpreter's OP_FORMAT_VALUE: conversion, then format(value, spec).
+    *out_ << "::protoPython::PythonEnvironment::formatValue(ctx, ";
+    if (!generateNode(n->value.get())) return false;
+    const char conv = (n->conversion == 's' || n->conversion == 'r' || n->conversion == 'a') ? n->conversion : 0;
+    *out_ << ", " << (conv ? std::string("'") + conv + "'" : std::string("0")) << ", ";
+    if (n->format_spec_node) {
+        if (!generateNode(n->format_spec_node.get())) return false;
+    } else if (!n->format_spec.empty()) {
+        *out_ << "ctx->fromUTF8String(\"" << escapeCppString(n->format_spec) << "\")";
+    } else {
+        *out_ << "nullptr";
+    }
+    *out_ << ")";
+    return true;
 }
 
 bool CppGenerator::generateSlice(SliceNode* n) {
@@ -3669,6 +3684,7 @@ void CppGenerator::collectNameRefs(ASTNode* node, std::unordered_set<std::string
         for (auto& v : n->values) collectNameRefs(v.get(), refs);
     } else if (auto* n = dynamic_cast<FormattedValueNode*>(node)) {
         collectNameRefs(n->value.get(), refs);
+        if (n->format_spec_node) collectNameRefs(n->format_spec_node.get(), refs);
     } else if (auto* n = dynamic_cast<StarredNode*>(node)) {
         collectNameRefs(n->value.get(), refs);
     } else if (auto* n = dynamic_cast<NamedExprNode*>(node)) {

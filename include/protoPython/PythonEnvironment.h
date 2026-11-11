@@ -12,6 +12,7 @@
 #include <mutex>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <thread>
 #include <unordered_map>
 #include <cstddef>
@@ -169,6 +170,42 @@ public:
     }
 
     /**
+     * @brief hash() of the int @p intObj (a SmallInteger or a LargeInteger),
+     * as CPython computes it: its magnitude modulo 2**61 - 1, with its sign,
+     * -1 reading -2. hash() reduces an int that a __hash__ method returns
+     * with it, and dicts and sets index keys by it.
+     */
+    static long long intHashValue(proto::ProtoContext* ctx, const proto::ProtoObject* intObj);
+    /**
+     * The hash value a `__hash__` result stands for, as CPython's
+     * slot_tp_hash reads it: a bool is the int it equals, an int (or an int
+     * subclass instance) that fits a 64-bit word is the value itself (-1
+     * reading -2), a larger one is reduced by the int hash. Any other result
+     * is not a hash: false, with TypeError raised when `raise` is set. The one
+     * reading of a `__hash__` result: hash() and dict and set indexing both
+     * use it.
+     */
+    static bool hashResultValue(proto::ProtoContext* ctx, const proto::ProtoObject* res, long long& out, bool raise);
+
+    /**
+     * @brief The key of keyword argument @p name in protoCore's calling
+     * convention: the interned name's pointer (protoCore
+     * docs/CALLING_CONVENTION.md, rule 3), the key ProtoKeywordArguments::has
+     * and getAt compare and ProtoKeywordArgument::name carries. Never the
+     * content hash: two names with one hash would be one keyword, and a
+     * caller following the convention would never be found. Interned names
+     * are perennial, so the key needs no tracing; a name built at run time
+     * (`f(**{str(i): v})`) is interned here and stays in the symbol table
+     * for the life of the process (docs/CPYTHON_CONFORMANCE.md).
+     */
+    static proto::proto_ulong kwKey(proto::ProtoContext* ctx, const proto::ProtoString* name) {
+        return reinterpret_cast<proto::proto_ulong>(internName(ctx, name));
+    }
+    static proto::proto_ulong kwKey(proto::ProtoContext* ctx, const proto::ProtoObject* name) {
+        return (name && name->isString(ctx)) ? kwKey(ctx, name->asString(ctx)) : 0;
+    }
+
+    /**
      * @brief A new, collectable `str` object holding @p str.
      *
      * The counterpart of getInternedString() for computed data strings: the
@@ -177,11 +214,124 @@ public:
      * unreachable.
      */
     static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const std::string& str);
-    
+    /** format(int, spec) / format(float, spec): the result, or nullptr with the exception raised. */
+    static const proto::ProtoObject* formatIntObject(proto::ProtoContext* ctx, const proto::ProtoObject* value,
+                                                     const std::string& spec);
+    static const proto::ProtoObject* formatFloatObject(proto::ProtoContext* ctx, double value,
+                                                       const std::string& spec, const char* typeName = nullptr);
+    static const proto::ProtoObject* formatStringObject(proto::ProtoContext* ctx, const std::string& value,
+                                                        const std::string& spec, const char* typeName = nullptr);
     /**
-     * @brief Returns a canonical dunder string for the given name.
+     * format(value, spec) as the builtin does: the built-in formatter for an
+     * exact int, bool, float or str (a subclass goes through its type's
+     * __format__, so an override is honoured), type(value).__format__ for
+     * anything else; the result must be a str. @p spec is a str, or nullptr
+     * for ''. Returns nullptr with the exception raised.
      */
-    static const proto::ProtoString* getInternalString(proto::ProtoContext* ctx, const char* name);
+    /** float(int) exactly rounded; raises OverflowError past the float range. */
+    static double intToDouble(proto::ProtoContext* ctx, const proto::ProtoObject* intObj);
+    /**
+     * A real number operand as a double (CPython's PyFloat_AsDouble): float,
+     * int (OverflowError past the range), bool, __float__, __index__; raises
+     * TypeError "must be real number, not T" otherwise.
+     */
+    static double realToDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** The int equal to an integral double (exact at any size); ValueError
+     *  for NaN, OverflowError for an infinity. */
+    static const proto::ProtoObject* integralDoubleToInt(proto::ProtoContext* ctx, double x);
+    /** a ** b for exact ints and floats, as the interpreter computes it. */
+    static const proto::ProtoObject* numberPower(proto::ProtoContext* ctx, const proto::ProtoObject* a,
+                                                 const proto::ProtoObject* b);
+    /** float ** float (CPython's float_pow: ZeroDivisionError, complex result, OverflowError). */
+    static const proto::ProtoObject* floatPow(proto::ProtoContext* ctx, double x, double y);
+    static const proto::ProtoObject* formatObject(proto::ProtoContext* ctx, const proto::ProtoObject* value,
+                                                  const proto::ProtoObject* spec);
+    /**
+     * One f-string replacement field (CPython's CONVERT_VALUE + FORMAT_SIMPLE /
+     * FORMAT_WITH_SPEC): @p conversion 's', 'r', 'a' or 0, then
+     * formatObject(value, spec). Never resolves a name, so a user binding of
+     * format/str/repr/ascii does not change an f-string.
+     */
+    static const proto::ProtoObject* formatValue(proto::ProtoContext* ctx, const proto::ProtoObject* value,
+                                                 char conversion, const proto::ProtoObject* spec);
+
+    /**
+     * @brief The interned symbol spelled by a string literal.
+     *
+     * Only for literals: the result is cached per thread under the literal's
+     * address, so a call costs a pointer hash and no string comparison (a
+     * hot path still keeps its key in a member, as getDataString() does).
+     * The template refuses a `const char*`, whose content could change
+     * under the same address.
+     *
+     * Internal keys -- attributes that hold the runtime's own state, never a
+     * Python name -- are spelled with a leading U+0001 ("\001__data__").
+     * No identifier contains it, and pythonAttributeKey() moves a name that
+     * Python code builds with it out of the way, so Python code can neither
+     * read nor replace that state.
+     */
+    template <size_t N>
+    static const proto::ProtoString* getInternalString(proto::ProtoContext* ctx, const char (&name)[N]) {
+        return internalStringAt(ctx, name);
+    }
+    static const proto::ProtoString* internalStringAt(proto::ProtoContext* ctx, const char* literal);
+
+    /** True when @p name is an internal key (first code point U+0001):
+     *  runtime state that no enumeration shows to Python code. */
+    static bool isInternalKey(proto::ProtoContext* ctx, const proto::ProtoString* name);
+    /** Same test on a UTF-8 spelling. */
+    static bool isInternalKeySpelling(const std::string& name) {
+        return !name.empty() && name[0] == '\x01';  // escape-boundary
+    }
+    /*
+     * The escaping boundary. Every name Python code supplies becomes a key
+     * through pythonKeySpelling(), and every stored key Python code sees
+     * becomes a name through storedKeyPythonName(); the other helpers below
+     * (pythonAttributeKey, pythonAttributeName, attributeKeySpelling) are
+     * these two on ProtoStrings. test/static/check_escape_boundary.py keeps
+     * the rule from being re-implemented elsewhere.
+     */
+    /** The key spelling of a Python name: a name that starts with U+0001
+     *  gets one more U+0001, so it never equals an internal key. */
+    static std::string pythonKeySpelling(const std::string& name) {
+        return isInternalKeySpelling(name) ? "\x01" + name : name;  // escape-boundary
+    }
+    /**
+     * The Python name a stored key spells: false for an internal key; an
+     * escaped key loses its added U+0001; any other key is its own name.
+     */
+    static bool storedKeyPythonName(const std::string& stored, std::string& out) {
+        if (!isInternalKeySpelling(stored)) { out = stored; return true; }
+        if (stored.size() < 2 || stored[1] != '\x01') return false;  // escape-boundary
+        out = stored.substr(1);
+        return true;
+    }
+    /**
+     * The attribute key for a name Python code supplies at run time
+     * (getattr/setattr/delattr/hasattr, object.__setattr__, a namespace
+     * dict's key, ...). A name that starts with U+0001 gets one more U+0001,
+     * so it never equals an internal key; pythonAttributeName() undoes it.
+     * Every other name is its interned symbol.
+     */
+    static const proto::ProtoString* pythonAttributeKey(proto::ProtoContext* ctx, const proto::ProtoString* name);
+    /**
+     * Same for a lookup that must not intern the name (a namespace probe
+     * such as `name in globals()`): an ordinary name is returned as it is,
+     * and protoCore reads the attribute by its content; only a name that
+     * needs escaping goes through pythonAttributeKey().
+     */
+    static const proto::ProtoString* pythonLookupKey(proto::ProtoContext* ctx, const proto::ProtoString* name) {
+        return isInternalKey(ctx, name) ? pythonAttributeKey(ctx, name) : name;
+    }
+    /** Same, for a name already spelled as UTF-8. */
+    static const proto::ProtoString* pythonAttributeKey(proto::ProtoContext* ctx, const std::string& name) {
+        return getInternedString(ctx, pythonKeySpelling(name));
+    }
+    /** The name an attribute key spells for a message: the Python name of
+     *  an escaped key, the key's own text otherwise. */
+    static std::string attributeKeySpelling(proto::ProtoContext* ctx, const proto::ProtoString* key);
+    /** The Python name of an attribute key, or nullptr for an internal key. */
+    static const proto::ProtoString* pythonAttributeName(proto::ProtoContext* ctx, const proto::ProtoString* key);
 
     /**
      * @brief Returns the process singleton ProtoSpace (L-Shape: one per process).
@@ -287,6 +437,88 @@ public:
      * @brief Gets the Python 'bytes' prototype.
      */
     const proto::ProtoObject* getBytesPrototype() const { return bytesPrototype; }
+    /** @brief The `bytearray` type (src/library/BytearrayType.cpp): its own
+     *  class with object as its only base. nullptr before the builtins module
+     *  exists. */
+    const proto::ProtoObject* getBytearrayPrototype() const { return bytearrayPrototype; }
+    void setBytearrayPrototype(const proto::ProtoObject* t) { bytearrayPrototype = t; }
+    /** @brief The `memoryview` type (src/library/MemoryviewType.cpp). */
+    const proto::ProtoObject* getMemoryviewPrototype() const { return memoryviewPrototype_; }
+    void setMemoryviewPrototype(const proto::ProtoObject* t) { memoryviewPrototype_ = t; }
+    /** @brief True for the bytes or the bytearray type itself (not a subclass). */
+    bool isBytesOrBytearrayType(const proto::ProtoObject* t) const {
+        return t && (t == bytesPrototype || t == bytearrayPrototype);
+    }
+
+    /**
+     * @name Bytes-like objects (src/library/BytearrayType.cpp)
+     *
+     * A bytearray keeps its content as a persistent list of byte chunks in a
+     * private attribute and publishes every mutation with a compare-and-swap,
+     * as a list does; it has no `__data__`. Code that accepts a bytes-like
+     * argument reads it through bytesLikeContent(), which knows every
+     * representation: bytes (a ProtoByteBuffer, or a legacy ProtoString, in
+     * `__data__`), bytearray, memoryview (over either) and a bare
+     * ProtoByteBuffer. A `str` is not bytes-like.
+     * @{
+     */
+    /**
+     * The frame eval() and exec() run code in when their locals are a
+     * mapping (a dict, a dict subclass, any object with __getitem__): its
+     * internal key `\001__locals_mapping__` holds the mapping, which LOAD_NAME, STORE_NAME
+     * and DELETE_NAME read and write directly (an exact dict through its
+     * storage, any other mapping through __getitem__ / __setitem__ /
+     * __delitem__), so nothing is copied and a dict subclass's __missing__
+     * answers, as in CPython. nullptr when @p locals is not such a mapping.
+     */
+    static proto::ProtoObject* localsMappingFrame(proto::ProtoContext* ctx, const proto::ProtoObject* locals,
+                                                  const proto::ProtoObject* globals,
+                                                  const proto::ProtoObject* codeObj);
+    /** The mapping of a localsMappingFrame() frame, else nullptr. */
+    static const proto::ProtoObject* localsMappingOf(proto::ProtoContext* ctx, const proto::ProtoObject* frame);
+    /** LOAD_NAME in a localsMappingFrame(): true with @p value set when
+     *  @p mapping holds @p name; false when it does not (a KeyError from
+     *  __getitem__); other exceptions propagate. */
+    static bool localsMappingLoad(proto::ProtoContext* ctx, const proto::ProtoObject* mapping,
+                                  const proto::ProtoObject* name, const proto::ProtoObject*& value);
+    /** STORE_NAME in a localsMappingFrame(): mapping[name] = value. */
+    static void localsMappingStore(proto::ProtoContext* ctx, const proto::ProtoObject* mapping,
+                                   const proto::ProtoObject* name, const proto::ProtoObject* value);
+    /** DELETE_NAME in a localsMappingFrame(): del mapping[name], NameError
+     *  when the name is not there. */
+    static void localsMappingDelete(proto::ProtoContext* ctx, const proto::ProtoObject* mapping,
+                                    const proto::ProtoObject* name);
+    /** The globals a list, set or dict comprehension compiled at a name
+     *  scope (CO_NAME_SCOPE_COMPREHENSION) reads when it is built in a
+     *  localsMappingFrame(): CPython inlines it, so its free names resolve
+     *  in the locals mapping first. A namespace over @p globals holding the
+     *  mapping's str keys; @p globals itself for any other frame. */
+    static const proto::ProtoObject* nameScopeComprehensionGlobals(proto::ProtoContext* ctx,
+                                                                   const proto::ProtoObject* frame,
+                                                                   const proto::ProtoObject* globals);
+    /** The `__name__` of @p obj's type, for error messages. */
+    static std::string typeNameOf(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** True when @p obj is a bytearray (an instance of bytearray or a subclass). */
+    static bool isBytearray(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** The content of the bytearray @p obj; false when it is not one. */
+    static bool bytearrayContent(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out);
+    /** The bytes of a bytes-like @p obj; false (nothing raised) when it is not one. */
+    static bool bytesLikeContent(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out);
+    /** True when @p obj is bytes-like (bytes, bytearray, memoryview or a subclass of one). */
+    static bool isBytesLike(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /** A new `bytes` object holding @p n bytes from @p data. */
+    static const proto::ProtoObject* newBytes(proto::ProtoContext* ctx, const char* data, size_t n);
+    /** A new `bytearray` (of exactly that type) holding @p n bytes from @p data. */
+    static const proto::ProtoObject* newBytearray(proto::ProtoContext* ctx, const char* data, size_t n);
+    /**
+     * Overwrites the bytes [@p at, @p at + @p data.size()) of the bytearray
+     * @p obj in place, atomically (a memoryview write, readinto,
+     * struct.pack_into). False with IndexError raised when the range is not
+     * inside the bytearray, or TypeError when @p obj is not one.
+     */
+    static bool bytearrayWrite(proto::ProtoContext* ctx, const proto::ProtoObject* obj, size_t at,
+                               const std::string& data);
+    /** @} */
 
     /**
      * @brief Native state of the `re` module (src/library/ReModule.cpp) for
@@ -501,6 +733,27 @@ public:
     const proto::ProtoObject* getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
     bool isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    /**
+     * CPython's rule for Python-level attribute writes on built-ins: a
+     * built-in type is immutable ("cannot set 'x' attribute of immutable
+     * type 'list'", TypeError) and an instance of a built-in type without
+     * __dict__ accepts no new attribute (AttributeError, "... is read-only"
+     * when the type has one of that name, "... no __dict__ for setting new
+     * attributes" otherwise). Raises and returns true when the store or
+     * delete of @p name on @p obj is such a write; false otherwise. A data
+     * descriptor of the type, an attribute the instance already owns and
+     * `__class__` (checked on its own) are left to the caller. Native code
+     * that writes with protoCore's setAttribute is not affected.
+     */
+    bool builtinAttributeWriteRejected(proto::ProtoContext* ctx, const proto::ProtoObject* obj,
+                                       const proto::ProtoString* name, bool isDelete);
+    /** A built-in type whose instances have no __dict__ (list, int, ...). */
+    bool isNoDictBuiltinType(const proto::ProtoObject* type) const { return noDictBuiltinTypes_.count(type) != 0; }
+    /** A built-in type (immutable: builtinAttributeWriteRejected). */
+    bool isImmutableBuiltinType(const proto::ProtoObject* type) const { return immutableBuiltinTypes_.count(type) != 0; }
+    /** Records the built-in types builtinAttributeWriteRejected protects;
+     *  called once, when the bootstrap has built them all. */
+    void registerImmutableBuiltinTypes(proto::ProtoContext* ctx);
 
     /** The __getattr__ hook a failed attribute lookup on `obj` falls back
      *  to, or nullptr.  *passObj tells whether the hook takes obj before the
@@ -649,6 +902,12 @@ public:
                                          const proto::ProtoObject* bases, const proto::ProtoObject* kwds,
                                          const ClassBody& body, const proto::ProtoObject** anchor);
 
+    /** True when @p ns is a dict used as a namespace (exec/eval globals) and
+     *  @p name is not its own attribute: what the attribute chain finds is
+     *  the dict type's (dict.__name__, dict.get), not a name; the names are
+     *  the dict's items. */
+    bool isDictNamespaceTypeAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* ns,
+                                      const proto::ProtoString* name);
     /** True when `value`, found under `name` in namespace `ns`, is what every
      *  module inherits as an object (its __class__, or a method of the module
      *  prototype such as keys or __init__) rather than a global name. */
@@ -710,6 +969,17 @@ public:
     bool isOverflowError(proto::ProtoContext* ctx, const proto::ProtoException& e) const;
     /** integer->asLong(ctx), false when the integer does not fit in 64 bits. */
     static bool tryAsLong(proto::ProtoContext* ctx, const proto::ProtoObject* integer, long long& out);
+    /**
+     * int / int as CPython computes it: the correctly rounded float of the
+     * exact quotient, at any size. False, with OverflowError ("integer
+     * division result too large for a float") raised, when it is out of the
+     * float range. The divisor is non-zero.
+     */
+    static bool intTrueDivide(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b,
+                              double& out);
+    /** float(int) as CPython converts it (round-half-even); false, with
+     *  OverflowError "int too large to convert to float" raised, past the range. */
+    static bool intToDouble(proto::ProtoContext* ctx, const proto::ProtoObject* integer, double& out);
     /** Inside a catch of `e`: rethrows it unless it is protoCore's Overflow
      *  error (an integer outside the 64-bit range, raised by asLong). */
     static void rethrowUnlessOverflow(proto::ProtoContext* ctx, const proto::ProtoException& e);
@@ -878,6 +1148,9 @@ public:
     const proto::ProtoObject* getAttributeErrorType() const { return attributeErrorType; }
     const proto::ProtoObject* getTuplePrototype() const { return tuplePrototype; }
     const proto::ProtoObject* getDictPrototype()  const { return dictPrototype; }
+    /** The dict_keys, dict_items and dict_values prototypes once built (else
+     *  nullptr), so a view is recognised by a pointer compare. */
+    const proto::ProtoObject* dictViewPrototypes[3] = {nullptr, nullptr, nullptr};
     const proto::ProtoObject* getNameErrorType() const { return nameErrorType; }
     const proto::ProtoObject* getZeroInteger() const { return zeroInteger; }
     const proto::ProtoObject* getOneInteger() const { return oneInteger; }
@@ -973,7 +1246,22 @@ public:
     const proto::ProtoString* getPosString() const { return __pos__; }
 
     const proto::ProtoString* getDataString() const { return dataString; }
+    /** Internal keys of the bytes-like types and of eval/exec frames,
+     *  interned once (PythonEnvironment::getInternalString). */
+    const proto::ProtoString* getBytearrayKey() const { return bytearrayKey_; }
+    const proto::ProtoString* getLocalsMappingKey() const { return localsMappingKey_; }
     const proto::ProtoString* getKeysString() const { return keysString; }
+    /** `\001__protopy_dict_proxy_target__`: an instance __dict__ view's owner.
+     *  Interned on first use (an interned string is never collected), so
+     *  startup allocates nothing for it. */
+    const proto::ProtoString* getDictProxyTargetString(proto::ProtoContext* ctx) {
+        const proto::ProtoString* s = dictProxyTargetString.load(std::memory_order_acquire);
+        if (!s) {
+            s = getInternedString(ctx, "\001__protopy_dict_proxy_target__");
+            dictProxyTargetString.store(s, std::memory_order_release);
+        }
+        return s;
+    }
     const proto::ProtoString* getSlotsString() const { return slotsString; }
     const proto::ProtoString* getIsSuperProxyString() const { return isSuperProxyString; }
     const proto::ProtoString* getPyGetAttrHandlerString() const { return pyGetAttrHandlerString_; }
@@ -1013,6 +1301,22 @@ public:
     // attribute write groups decline).  Invalidated with the other dunder
     // flags when a class gains __setattr__ (STRUCT-247).
     static constexpr uint32_t PYFLAG_HAS_CUSTOM_SETATTR    = 1u << 5;
+    /** An instance of this class may be a built-in type or an instance
+     *  without __dict__ (builtinAttributeWriteRejected decides): attribute
+     *  stores on such objects take the full setAttribute path. */
+    static constexpr uint32_t PYFLAG_NO_FAST_STORE         = 1u << 6;
+    /** Some MRO entry other than object, type, int, float, str or bool owns
+     *  __str__ or __repr__: str() and an empty-spec format() of an instance
+     *  of an int/float subclass must call them. Invalidated when a class
+     *  gains __str__ or __repr__. */
+    static constexpr uint32_t PYFLAG_HAS_CUSTOM_STR        = 1u << 7;
+    /** A data descriptor with __get__ was stored on some MRO entry after the
+     *  class was created (or its __bases__ changed): an instance may own an
+     *  attribute that the descriptor now governs, so an instance read of a
+     *  name a data descriptor governs takes the full lookup, which asks the
+     *  descriptor first (instanceReadNeedsFullLookup).  Sticky: the entry
+     *  keeps its marker (markDataDescriptorShadow). */
+    static constexpr uint32_t PYFLAG_DESCR_SHADOW          = 1u << 8;
     static constexpr uint32_t PYFLAG_COMPUTED              = 1u << 31;
 
     /** Fast read of cached flags; returns 0 when not yet computed. */
@@ -1020,6 +1324,30 @@ public:
 
     /** Compute (if absent) and return cached flags for `cls`. */
     uint32_t ensureClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
+    /** Whether a read of `name` on an instance of `cls` (class flags
+     *  `flags`) must take the full lookup instead of answering with an own
+     *  attribute: the class overrides __getattribute__, or it is marked
+     *  PYFLAG_DESCR_SHADOW and its chain holds a data descriptor `name`. */
+    bool instanceReadNeedsFullLookup(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
+                                     uint32_t flags, const proto::ProtoString* name);
+    /** Marks `cls` (PYFLAG_DESCR_SHADOW) after a data descriptor reached its
+     *  MRO late, and drops the cached flags of it and its subclasses. */
+    void markDataDescriptorShadow(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
+    void classAttributeChanged(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
+                               const proto::ProtoString* name);
+    /** Whether OP_STORE_ATTR's plain instance store (and storeAttr's) must
+     *  decline `obj` because it is a class.  A class whose base is a user
+     *  class has that base, not type, as its first parent, so the parent
+     *  test does not exclude it; the receiver's own __is_python_class__
+     *  marker decides.  No cached flag and no parent relation is consulted:
+     *  a flag published by a thread that computed it before a subclass
+     *  existed, or a first parent chosen by a metaclass mro(), cannot let
+     *  a class through. */
+    bool storeReceiverIsClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj) const {
+        return obj->hasOwnAttribute(ctx, isPythonClassString) == PROTO_TRUE;
+    }
+    /** Drops the cached flags of `cls` and of every transitive subclass. */
+    void dropClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
 
     const proto::ProtoString* getGetattrDunderString() const { return getattrDunderString; }
     const proto::ProtoString* getGetattributeDunderString() const { return getattributeDunderString; }
@@ -1396,6 +1724,8 @@ public:
      */
     void raiseAttributeErrorWithMessage(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& message, const std::string& attr);
     void raiseRuntimeError(proto::ProtoContext* context, const std::string& msg);
+    /** SystemError(msg): the runtime found its own state inconsistent. */
+    void raiseSystemError(proto::ProtoContext* context, const std::string& msg);
     void raiseOSError(proto::ProtoContext* context, int errnum, const std::string& strerr, const std::string& filename = "");
     void raiseTypeError(proto::ProtoContext* context, const std::string& msg);
     /** Raise ImportError (ModuleNotFoundError for "No module named" messages)
@@ -1422,6 +1752,7 @@ public:
     void raiseRecursionError(proto::ProtoContext* context);
     void raiseAssertionError(proto::ProtoContext* ctx, const proto::ProtoObject* msg = nullptr);
     void raiseZeroDivisionError(proto::ProtoContext* ctx);
+    void raiseZeroDivisionError(proto::ProtoContext* ctx, const std::string& msg);
     // OverflowError(msg), the builtin type.
     void raiseOverflowError(proto::ProtoContext* ctx, const std::string& msg);
     void raiseIndexError(proto::ProtoContext* context, const std::string& msg);
@@ -1432,6 +1763,10 @@ public:
      * @brief Returns the string representation of an object (Step 1120).
      */
     static std::string reprObject(proto::ProtoContext* context, const proto::ProtoObject* obj);
+    /** `out`, the result of a Python-level `dunder` (__str__/__repr__) call, or TypeError
+     *  "<dunder> returned non-string (type T)" when it is not a str (CPython). */
+    static const proto::ProtoObject* checkStrResult(proto::ProtoContext* context, const proto::ProtoObject* out,
+                                                    const char* dunder);
     /** repr() of a str given as UTF-8: CPython's quoting and escapes, applied
      *  per code point (printable non-ASCII characters are kept). */
     static std::string reprStr(const std::string& utf8);
@@ -1445,6 +1780,50 @@ public:
      * @details Raises TypeError for an unhashable value and returns false.
      */
     static bool hashKey(proto::ProtoContext* ctx, const proto::ProtoObject* value, proto::proto_ulong& hash);
+
+    /**
+     * @name Dict storage
+     * A dict keeps its values in `__data__`, a ProtoSparseList indexed by the key hash, whose
+     * slots hold the value of an embedded int or None key (the index is then the key) or a
+     * bucket (a ProtoMap) from each stored key to its value; a hit is confirmed by identity, then
+     * with __eq__. The layout is described next to its implementation ("Dict entries under
+     * colliding hashes" in PythonEnvironment.cpp). Code that holds a dict's `__data__` reads and
+     * writes it through these functions and never indexes it with a hash: a str key's slot is a
+     * bucket, not its value. They hash a key as dicts do; an unhashable key falls back to its
+     * protoCore hash and raises nothing. The caller keeps `__keys__` in step.
+     * @{
+     */
+    /** The value stored under `key` in `data`, or nullptr if absent. */
+    static const proto::ProtoObject* dictDataGet(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                                 const proto::ProtoObject* key);
+    /** `data` (a new sparse list when null) with `value` stored under `key`; `isNew` tells whether
+     *  the key was absent (an equal stored key keeps its object). */
+    static const proto::ProtoSparseList* dictDataPut(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                                     const proto::ProtoObject* key, const proto::ProtoObject* value,
+                                                     bool* isNew = nullptr);
+    /** `data` without the entry for `key` (`data` itself when absent). */
+    static const proto::ProtoSparseList* dictDataRemove(proto::ProtoContext* ctx, const proto::ProtoSparseList* data,
+                                                        const proto::ProtoObject* key);
+    /** `keys` (a dict's `__keys__` storage) without the key equal to `key`. */
+    static const proto::ProtoList* dictKeysWithout(proto::ProtoContext* ctx, const proto::ProtoList* keys,
+                                                   const proto::ProtoObject* key);
+    /** Whether `k` is the str key `name`: the same object, or a str of equal content (an equal
+     *  hash alone does not tell two strings apart). */
+    static bool sameStringKey(proto::ProtoContext* ctx, const proto::ProtoObject* k, const proto::ProtoObject* name);
+    /** sameStringKey for two names (either may be null). */
+    static bool sameStringName(proto::ProtoContext* ctx, const proto::ProtoString* a, const proto::ProtoString* b) {
+        return a == b || (a && b && sameStringKey(ctx, a->asObject(ctx), b->asObject(ctx)));
+    }
+    /** `x in view` for a dict_keys or dict_items view: 1 or 0, an exception
+     *  propagating as raised; -1 when `view` is neither. */
+    static int dictViewMembership(proto::ProtoContext* ctx, const proto::ProtoObject* view,
+                                  const proto::ProtoObject* x);
+    /** The keyword arguments of a `**mapping` call taken from a dict object: a sparse list from
+     *  each str key's interned name pointer (kwKey) to its value, the form a callee receives keywords in (never a dict's
+     *  own storage, whose str slots are buckets). nullptr when `dictObj` keeps no dict storage. */
+    static const proto::ProtoSparseList* keywordArgumentsFromDict(proto::ProtoContext* ctx,
+                                                                  const proto::ProtoObject* dictObj);
+    /** @} */
 
     /**
      * @name Set storage
@@ -1529,9 +1908,29 @@ public:
     std::string formatTraceback(const proto::ProtoContext* ctx, const proto::ProtoObject* exc = nullptr);
     
     // Keyword Names Stack management (for **kwargs refinement)
-    void pushKwNames(const proto::ProtoTuple* names);
+    /**
+     * @brief Records the call order of the keywords of one call.
+     *
+     * @p names are the keyword names in call order; @p kwargs is the
+     * ProtoSparseList the call passes its keywords in. The entry applies to
+     * that call only: keywordsInCallOrder uses it for keyword arguments made
+     * from that very list, so a native call made inside the callee never
+     * takes an outer call's order.
+     */
+    void pushKwNames(const proto::ProtoTuple* names, const proto::ProtoSparseList* kwargs);
     void popKwNames();
-    const proto::ProtoTuple* getCurrentKwNames() const;
+    /**
+     * @brief The keyword arguments of one call in call order.
+     *
+     * The pairs name the keywords (interned names, protoCore's calling
+     * convention), but a call made with a ProtoSparseList (the interpreter's
+     * CALL_KW) gives them in key order. When the innermost keyword-name entry
+     * was pushed for the list these keywords come from, it supplies the
+     * order; otherwise (a call from C++ or another runtime) the pairs' own
+     * order is used.
+     */
+    std::vector<proto::ProtoKeywordArgument> keywordsInCallOrder(proto::ProtoContext* ctx,
+                                                                 const proto::ProtoKeywordArguments* kwargs) const;
 
     /**
      * @brief Collects candidate names for fuzzy matching suggestions.
@@ -1740,6 +2139,13 @@ public:
         ~TransientPin() {
             if (roots_ && h_ != proto::ProtoRootSet::kNullHandle) roots_->remove(h_);
         }
+        /** Pins @p obj in place of the object pinned so far (an accumulator). */
+        void reset(const proto::ProtoObject* obj) {
+            if (!roots_) return;
+            const proto::ProtoRootSet::Handle next = obj ? roots_->add(obj) : proto::ProtoRootSet::kNullHandle;
+            if (h_ != proto::ProtoRootSet::kNullHandle) roots_->remove(h_);
+            h_ = next;
+        }
         TransientPin(const TransientPin&) = delete;
         TransientPin& operator=(const TransientPin&) = delete;
         TransientPin(TransientPin&&) = delete;
@@ -1747,6 +2153,169 @@ public:
     private:
         proto::ProtoRootSet* roots_;
         proto::ProtoRootSet::Handle h_;
+    };
+
+    /**
+     * @brief TransientPin for a growing collection of values: every add()ed
+     * object stays pinned until the set goes out of scope.
+     *
+     * For native code that gathers values in a C++ container (a
+     * std::vector of sort keys, the items of an iterable) while it runs
+     * Python code: the collector does not trace the container.
+     */
+    class TransientPinSet {
+    public:
+        explicit TransientPinSet(PythonEnvironment* env)
+            : roots_(env ? env->getTransientArgsRoots() : nullptr) {}
+        ~TransientPinSet() {
+            if (!roots_) return;
+            for (proto::ProtoRootSet::Handle h : handles_) roots_->remove(h);
+        }
+        void add(const proto::ProtoObject* obj) {
+            if (roots_ && obj) handles_.push_back(roots_->add(obj));
+        }
+        TransientPinSet(const TransientPinSet&) = delete;
+        TransientPinSet& operator=(const TransientPinSet&) = delete;
+    private:
+        proto::ProtoRootSet* roots_;
+        std::vector<proto::ProtoRootSet::Handle> handles_;
+    };
+
+    /**
+     * @brief TransientPinSet that pins nothing until arm(): for native code
+     * that gathers values in a C++ container and only sometimes runs Python
+     * code over them (sorted() over ints runs none; over user objects, or
+     * with a key function, it does). Values add()ed before arm() are pinned
+     * by arm(); later ones as they come. Embedded values are never pinned
+     * (the collector does not own them). arm() before the first step that
+     * may run Python code.
+     */
+    class LazyPinSet {
+    public:
+        explicit LazyPinSet(PythonEnvironment* env) : env_(env) {}
+        ~LazyPinSet() {
+            if (!roots_) return;
+            for (proto::ProtoRootSet::Handle h : handles_) roots_->remove(h);
+        }
+        LazyPinSet(const LazyPinSet&) = delete;
+        LazyPinSet& operator=(const LazyPinSet&) = delete;
+        void add(const proto::ProtoObject* obj) {
+            if (!obj || (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 1) return;
+            if (!armed_) { pending_.push_back(obj); return; }
+            if (roots_) handles_.push_back(roots_->add(obj));
+        }
+        void arm() {
+            if (armed_) return;
+            armed_ = true;
+            roots_ = env_ ? env_->getTransientArgsRoots() : nullptr;
+            if (roots_) for (const proto::ProtoObject* o : pending_) handles_.push_back(roots_->add(o));
+            pending_.clear();
+            pending_.shrink_to_fit();
+        }
+        /** arm() when comparing the values may run Python code. */
+        template <class Container>
+        void armIfAnyNontrivial(const Container& values) {
+            if (armed_) return;
+            for (const proto::ProtoObject* o : values)
+                if (!LazyComparePins::trivialOperand(o)) { arm(); return; }
+        }
+        bool armed() const { return armed_; }
+    private:
+        PythonEnvironment* env_;
+        proto::ProtoRootSet* roots_ = nullptr;
+        std::vector<const proto::ProtoObject*> pending_;
+        std::vector<proto::ProtoRootSet::Handle> handles_;
+        bool armed_ = false;
+    };
+
+    /**
+     * @brief Lazy pins for native code that compares objects held in C++
+     *        locals (a list's storage, a dict snapshot, a key).
+     *
+     * A comparison can run Python code (a user __eq__), which may drop the
+     * last managed reference to those objects and allocate. Pinning them on
+     * every call, though, would put the transient root set's mutex on hot
+     * paths such as `x in lst` over ints. So nothing is pinned until
+     * beforeCompare() meets two operands of which one is not trivial (a str or
+     * an embedded value: comparing two of those runs no Python code); from
+     * then on the objects given to the constructor stay pinned until the
+     * scope ends. Call beforeCompare() before each comparison that may run
+     * Python code, ahead of anything it might allocate.
+     *
+     * An ambient instance (Ambient::Yes) serves code that holds objects
+     * across comparisons made by others, such as a cursor over a set table
+     * whose caller looks each element up in another set: it joins a
+     * per-thread chain, and any instance on the thread that arms (its own
+     * comparison may run Python code) arms the whole chain first. Ambient
+     * instances must be destroyed in reverse order of construction, which
+     * scoped locals are.
+     */
+    class LazyComparePins {
+    public:
+        enum class Ambient { No, Yes };
+        LazyComparePins(proto::ProtoContext* ctx, const proto::ProtoObject* a,
+                        const proto::ProtoObject* b = nullptr, const proto::ProtoObject* c = nullptr,
+                        Ambient ambient = Ambient::No)
+            : ctx_(ctx), objs_{a, b, c} {
+            if (ambient == Ambient::Yes) {
+                ambient_ = true;
+                below_ = ambientTop_;
+                ambientTop_ = this;
+            }
+        }
+        ~LazyComparePins() {
+            if (ambient_) ambientTop_ = below_;
+            if (!roots_) return;
+            for (proto::ProtoRootSet::Handle h : handles_)
+                if (h != proto::ProtoRootSet::kNullHandle) roots_->remove(h);
+        }
+        LazyComparePins(const LazyComparePins&) = delete;
+        LazyComparePins& operator=(const LazyComparePins&) = delete;
+
+        /** Whether comparing `o` with another trivial operand runs no Python code. */
+        static bool trivialOperand(const proto::ProtoObject* o) {
+            return proto::ProtoObject::isStringTagFast(o) || (reinterpret_cast<uintptr_t>(o) & 0x3F) == 1;
+        }
+        /** Pins when comparing `x` with `y` may run Python code; returns armed(). */
+        bool beforeCompare(const proto::ProtoObject* x, const proto::ProtoObject* y) {
+            if (!armed_ && !(trivialOperand(x) && trivialOperand(y))) arm();
+            return armed_;
+        }
+        /** Pins the objects now, and every ambient instance on the thread. */
+        void arm() {
+            if (armed_) return;
+            pinOwn();
+            armAmbient();
+        }
+        /**
+         * Pins every ambient instance on the calling thread. Called where
+         * Python code may run behind them: compareObjects with operands that
+         * are not trivial, a user __hash__ called for a dict or set key.
+         */
+        static void armAmbient() {
+            for (LazyComparePins* p = ambientTop_; p; p = p->below_)
+                if (!p->armed_) p->pinOwn();
+        }
+        /** Whether a comparison that may run Python code was announced. */
+        bool armed() const { return armed_; }
+    private:
+        void pinOwn() {
+            armed_ = true;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
+            roots_ = env ? env->getTransientArgsRoots() : nullptr;
+            if (!roots_) return;
+            for (int i = 0; i < 3; ++i)
+                handles_[i] = objs_[i] ? roots_->add(objs_[i]) : proto::ProtoRootSet::kNullHandle;
+        }
+        static inline thread_local LazyComparePins* ambientTop_ = nullptr;
+        LazyComparePins* below_ = nullptr;
+        bool ambient_ = false;
+        proto::ProtoContext* ctx_;
+        const proto::ProtoObject* objs_[3];
+        proto::ProtoRootSet* roots_ = nullptr;
+        proto::ProtoRootSet::Handle handles_[3] = {proto::ProtoRootSet::kNullHandle, proto::ProtoRootSet::kNullHandle,
+                                                   proto::ProtoRootSet::kNullHandle};
+        bool armed_ = false;
     };
 
 private:
@@ -1764,6 +2333,8 @@ private:
     const proto::ProtoObject* tuplePrototype;
     const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* bytesPrototype;
+    const proto::ProtoObject* bytearrayPrototype = nullptr;
+    const proto::ProtoObject* memoryviewPrototype_ = nullptr;
     std::shared_ptr<void> reModuleState_;  // see reModuleState()
     const proto::ProtoObject* nonePrototype;
     const proto::ProtoObject* ellipsisPrototype;
@@ -1801,6 +2372,7 @@ public:
     const proto::ProtoObject* getBuiltinFunctionOrMethodPrototype() const { return builtinFunctionOrMethodPrototype; }
     const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
     const proto::ProtoObject* getStopAsyncIterationType() const { return stopAsyncIterationType; }
+    const proto::ProtoObject* getKeyErrorType() const { return keyErrorType; }
     const proto::ProtoObject* getRuntimeErrorType() const { return runtimeErrorType; }
     /** Process-singleton "unbound local" sentinel.  Compiler stores this
         into CO_OPTIMIZED slots that correspond to annotation-only locals
@@ -1953,6 +2525,13 @@ private:
     // (Phase 4 of the protoCore-delegation design).
     const proto::ProtoString* isPythonClassString{nullptr};
     const proto::ProtoString* pyFlagsString_{nullptr};  // P2: type flags cache key
+    // Built at the end of the bootstrap and read-only afterwards, so threads
+    // read them without synchronisation (registerImmutableBuiltinTypes).
+    std::unordered_set<const proto::ProtoObject*> immutableBuiltinTypes_;
+    std::unordered_set<const proto::ProtoObject*> noDictBuiltinTypes_;
+    // The first parents of the immutable built-in types: an object whose
+    // first parent is one of them may be such a type (PYFLAG_NO_FAST_STORE).
+    std::unordered_set<const proto::ProtoObject*> builtinTypeParents_;
 
     const proto::ProtoString* enumProtoS{nullptr};
     const proto::ProtoString* revProtoS{nullptr};
@@ -2036,7 +2615,10 @@ private:
     const proto::ProtoString* delItemString{nullptr};
     const proto::ProtoString* dataString{nullptr};
     const proto::ProtoString* keysString{nullptr};
+    std::atomic<const proto::ProtoString*> dictProxyTargetString{nullptr};
     const proto::ProtoString* slotsString{nullptr};
+    const proto::ProtoString* bytearrayKey_{nullptr};
+    const proto::ProtoString* localsMappingKey_{nullptr};
     const proto::ProtoString* isSuperProxyString{nullptr};
     const proto::ProtoString* pyGetAttrHandlerString_{nullptr};
     const proto::ProtoString* getattrDunderString{nullptr};
@@ -2105,7 +2687,27 @@ public:
         // getType() / repr() so they match CPython.
         enum class Kind { METHOD, WRAPPER };
         Kind kind{Kind::METHOD};
+        // A classmethod or staticmethod in CPython (__new__, fromkeys,
+        // from_bytes, ...): its receiver is not the first argument.
+        bool classLevel{false};
+        // Every built-in type that binds the function (set and frozenset
+        // share theirs); an unbound call accepts an instance of any of them.
+        std::vector<const proto::ProtoObject*> owners;
+        // The owner is a class (not the builtins module): an unbound call
+        // binds a receiver. Set once registration is complete.
+        bool descriptor{false};
     };
+    /**
+     * The method_descriptor call step: `T.m(x, *a)` reaches a native method
+     * with no receiver. When @p fn is a built-in type's instance method,
+     * @p self becomes the first argument, checked to be an instance of the
+     * owning type as CPython checks it ("descriptor 'm' for 'T' objects
+     * doesn't apply to a 'X' object"), and @p shift is set to 1: the call
+     * passes the arguments after it. Returns false after raising TypeError;
+     * true otherwise (also when nothing applies).
+     */
+    bool bindUnboundDescriptorCall(proto::ProtoContext* ctx, proto::ProtoMethod fn,
+                                   const proto::ProtoObject*& self, const proto::ProtoList* args, unsigned& shift);
 private:
     std::unordered_map<const void*, NativeMethodInfo> nativeMethodNames_;
 public:

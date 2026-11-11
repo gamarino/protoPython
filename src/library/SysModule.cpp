@@ -71,7 +71,7 @@ static const proto::ProtoObject* sys_exit(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
         // sys.exit(arg) raises SystemExit(arg) whatever the argument's type;
@@ -146,7 +146,7 @@ static const proto::ProtoObject* sys_settrace(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr) {
         const proto::ProtoExternalPointer* ext = envPtr->asExternalPointer(context);
         if (ext) {
@@ -255,7 +255,7 @@ static const proto::ProtoObject* sys_gettrace(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr) {
         const proto::ProtoExternalPointer* ext = envPtr->asExternalPointer(context);
         if (ext) {
@@ -429,8 +429,8 @@ static const proto::ProtoObject* sys_getframemodulename(
         arg = positionalParameters->getAt(context, 0);
     } else if (keywordParameters) {
         const proto::ProtoString* depthS = PythonEnvironment::getInternedString(context, "depth");
-        if (keywordParameters->has(context, depthS->getHash(context))) {
-            arg = keywordParameters->getAt(context, depthS->getHash(context));
+        if (keywordParameters->has(context, PythonEnvironment::kwKey(context, depthS))) {
+            arg = keywordParameters->getAt(context, PythonEnvironment::kwKey(context, depthS));
         }
     }
     proto::proto_long depth = 0;
@@ -453,7 +453,7 @@ static const proto::ProtoObject* sys_setrecursionlimit(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
         if (positionalParameters->getSize(context) > 0) {
@@ -574,7 +574,7 @@ static const proto::ProtoObject* sys_set_asyncgen_hooks(
             v = positionalParameters->getAt(context, w);
         }
         if (keywordParameters) {
-            const proto::proto_ulong h = PythonEnvironment::getInternedString(context, kParams[w])->getHash(context);
+            const proto::proto_ulong h = PythonEnvironment::kwKey(context, PythonEnvironment::getInternedString(context, kParams[w]));
             if (keywordParameters->has(context, h)) v = keywordParameters->getAt(context, h);
         }
         if (!v) continue;
@@ -674,7 +674,7 @@ static const proto::ProtoObject* sys_module_getattr(
         mutableSys->setAttribute(ctx, cacheS, env->initDictStorage(ctx, cache));
     }
     env->resolveModule("importlib", ctx);
-    return sysMod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, name.c_str()));
+    return sysMod->getAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, name));
 }
 
 // sys.unraisablehook(unraisable): the default handler for an exception that
@@ -800,22 +800,26 @@ static const proto::ProtoObject* sys_file_write(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    if (positionalParameters->getSize(context) > 0) {
-        const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
-        if (arg->isString(context)) {
-            std::string s;
-            arg->asString(context)->toUTF8String(context, s);
-            const proto::ProtoObject* streamType = self->getAttribute(context, proto::ProtoString::createSymbol(context, "_stream_type"));
-            if (streamType && streamType->isInteger(context) && streamType->asLong(context) == 2) {
-                fprintf(stderr, "%s", s.c_str());
-                fflush(stderr);
-            } else {
-                fprintf(stdout, "%s", s.c_str());
-                fflush(stdout);
-            }
-        }
+    (void)parentLink; (void)keywordParameters;
+    // TextIOWrapper.write(s): every byte of s (a NUL included) and the
+    // number of characters written.
+    const proto::ProtoObject* arg = positionalParameters->getSize(context) > 0
+        ? positionalParameters->getAt(context, 0) : nullptr;
+    if (!arg || !arg->isString(context)) {
+        if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
+            env->raiseTypeError(context, "write() argument must be str, not " +
+                                         PythonEnvironment::typeNameOf(context, arg));
+        return nullptr;
     }
-    return context->fromInteger(0); // Return number of characters or 0
+    std::string s;
+    arg->asString(context)->toUTF8String(context, s);
+    const proto::ProtoObject* streamType = self->getAttribute(context, proto::ProtoString::createSymbol(context, "_stream_type"));
+    FILE* stream = (streamType && streamType->isInteger(context) && streamType->asLong(context) == 2) ? stderr : stdout;
+    std::fwrite(s.data(), 1, s.size(), stream);
+    std::fflush(stream);
+    long long chars = 0;
+    for (unsigned char c : s) if ((c & 0xC0) != 0x80) ++chars;
+    return context->fromInteger(chars);
 }
 
 static const proto::ProtoObject* sys_file_flush(
@@ -937,7 +941,7 @@ static const proto::ProtoObject* sys_set_coroutine_origin_tracking_depth(
     const proto::ProtoObject* depth = (args && args->getSize(context) >= 1) ? args->getAt(context, 0) : nullptr;
     if (!depth && kw) {
         const proto::ProtoString* depthS = PythonEnvironment::getInternedString(context, "depth");
-        if (kw->has(context, depthS->getHash(context))) depth = kw->getAt(context, depthS->getHash(context));
+        if (kw->has(context, PythonEnvironment::kwKey(context, depthS))) depth = kw->getAt(context, PythonEnvironment::kwKey(context, depthS));
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!depth || !depth->isInteger(context)) {
@@ -1000,7 +1004,7 @@ static const proto::ProtoObject* sys_getrecursionlimit(
     const proto::ParentLink* parentLink,
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters) {
-    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__env_ptr__"));
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::createSymbol(context, "\001__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
         if (env) return context->fromInteger(env->getRecursionLimit());
@@ -1013,7 +1017,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const proto::ProtoObject* sys = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
 
     // Store env pointer for trace functions and exit
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__env_ptr__"), ctx->fromExternalPointer(env));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "\001__env_ptr__"), ctx->fromExternalPointer(env));
 
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "exception"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exception));
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "exc_info"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exc_info));
@@ -1075,8 +1079,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_framework"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
 #endif
     
-    // sys.byteorder
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    // sys.byteorder. MSVC defines neither macro; an undefined pair would
+    // compare equal (0 == 0) and report "big" on little-endian Windows.
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     const char* bo = "big";
 #else
     const char* bo = "little";
@@ -1180,7 +1185,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         argvWrapper = argvWrapper->addParent(ctx, env->getListPrototype());
         argvWrapper = argvWrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), env->getListPrototype());
     }
-    argvWrapper = argvWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"), argvList->asObject(ctx));
+    argvWrapper = argvWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "\001__data__"), argvList->asObject(ctx));
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "argv"), argvWrapper);
 
     // sys.warnoptions (empty list by default)
@@ -1190,7 +1195,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         warnWrapper = warnWrapper->addParent(ctx, env->getListPrototype());
         warnWrapper = warnWrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), env->getListPrototype());
     }
-    warnWrapper = warnWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"), warnList->asObject(ctx));
+    warnWrapper = warnWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "\001__data__"), warnList->asObject(ctx));
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "warnoptions"), warnWrapper);
 
     // sys.version_info: struct sequence (major, minor, micro, releaselevel, serial)

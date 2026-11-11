@@ -390,9 +390,8 @@ mechanically:
 - the switch handles **114**; the other 5 (`GEN_START`, `GET_LEN`,
   `MATCH_MAPPING`, `MATCH_SEQUENCE`, `EXTENDED_ARG`) are reserved: defined,
   never emitted, and a no-op if executed (the switch's `default`);
-- the compiler emits **111**: all but those 5 and `ROT_FOUR`,
-  `FORMAT_VALUE`, `SETUP_ASYNC_WITH`, which the VM handles but nothing
-  produces; `NOP`, `ACC_FAST_FAST`, `INC_FAST_K` and `LT_FAST_FAST_JF` are
+- the compiler emits **112**: all but those 5 and `ROT_FOUR`,
+  `SETUP_ASYNC_WITH`, which the VM handles but nothing produces; `NOP`, `ACC_FAST_FAST`, `INC_FAST_K` and `LT_FAST_FAST_JF` are
   produced only by the peephole specialiser;
 - `_opcode.opmap` (`OpcodeModule.cpp`) lacks 8 opcodes (`PUSH_NULL`,
   `BUILD_RAW_LIST`, `WRAP_RAW_LIST`, the three fused ones and the two write
@@ -559,7 +558,7 @@ protoCore's tagged 56-bit integers; leaving the range promotes to a
 | `BUILD_TUPLE` | 118 | count | `a1..an -> tuple` | A tuple backed by a `ProtoList` (never a `ProtoTuple`, which protoCore interns forever). | tuple displays, defaults, bases |
 | `BUILD_LIST` | 114 | count | `a1..an -> list` | A `list` instance whose `__data__` is a `ProtoList`. | list displays, `*args` call sequences |
 | `BUILD_SET` | 171 | count | `a1..an -> set` | `TypeError` for an unhashable item. | set displays, set comprehensions |
-| `BUILD_MAP` | 116 | pair count | `k1 v1 .. kn vn -> dict` | A `dict` (`__data__` sparse list keyed by hash, `__keys__` in insertion order); keys hashed with the user's `__hash__`. | dict displays, keyword defaults, `**` call mappings |
+| `BUILD_MAP` | 116 | pair count | `k1 v1 .. kn vn -> dict` | A `dict` (`__data__` sparse list indexed by key hash, hits confirmed by equality, `__keys__` in insertion order); keys hashed with the user's `__hash__`. | dict displays, keyword defaults, `**` call mappings |
 | `BUILD_STRING` | 179 | count | `s1..sn -> str` | Joins the parts. | f-strings (`compileJoinedStr`) |
 | `LIST_APPEND` | 168 | depth | `.. list .. v -> .. list ..` | Appends to the list `arg` slots below the value. | list comprehensions, list displays with `*` |
 | `SET_ADD` | 170 | depth | `.. set .. v -> .. set ..` | | set comprehensions and displays |
@@ -605,7 +604,7 @@ Produced only by `Compiler::specialiseBytecode` (1.2), each followed by three
 | `MATCH_MAPPING` | 199 | reserved (`match` compiles to calls of `isinstance`, `len`, ...) |
 | `MATCH_SEQUENCE` | 200 | reserved |
 | `EXTENDED_ARG` | 201 | reserved (arguments are full integers) |
-| `FORMAT_VALUE` | 196 | handled, never emitted: f-string conversions compile to calls of `repr`/`str`/`ascii` and `format`. Its handler pops the value before the format specification, the reverse of CPython's order. |
+| `FORMAT_VALUE` | 196 | emitted for each f-string field (no longer reserved): pops the spec (arg bit `0x04`) and the value, applies the conversion (arg & `0x03`: 1 `!s`, 2 `!r`, 3 `!a`) and pushes `format(value, spec)` (`PythonEnvironment::formatValue`: exact int, float, bool and str are formatted directly, any other value through `type(value).__format__`). It looks up no name, so a program that rebinds `format`, `str` or `repr` does not change its f-strings. A plain field (arg 0) holding an exact str, int, float or bool is left as it is: these are immutable, and `BUILD_STRING` writes their text into the joined string without a str object of their own. |
 | `ROT_FOUR` | 154 | handled, never emitted |
 | `SETUP_ASYNC_WITH` | 191 | handled, never emitted |
 | `JUMP_FORWARD` | 195 | handled, never emitted (the compiler's forward jumps are `JUMP_ABSOLUTE`) |
@@ -633,7 +632,7 @@ print(1 + 2)
 ```text
 code 0: <module> (01-arithmetic.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 35: operand stack from 0
+  slots 36: operand stack from 0
   constants:
     #0   int     1
     #1   int     2
@@ -674,7 +673,7 @@ def area(w, h):
 ```text
 code 0: <module> (02-locals.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code area, line 2>  -> code 0.0
     #1   NoneType None
@@ -735,7 +734,7 @@ def parity(n):
 ```text
 code 0: <module> (03-conditionals.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code sign, line 2>  -> code 0.0
     #1   code    <code parity, line 10>  -> code 0.1
@@ -832,7 +831,7 @@ print(greet("world"))
 ```text
 code 0: <module> (04-def-call.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 35: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code greet, line 2>  -> code 0.0
     #1   str     'world'
@@ -894,7 +893,7 @@ print(fib(20))
 ```text
 code 0: <module> (05-fib.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 35: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code fib, line 2>  -> code 0.0
     #1   int     20
@@ -917,7 +916,7 @@ code 0: <module> (05-fib.py, line 1)
 
 code 0.0: fib (05-fib.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..0, operand stack from 1
+  slots 134: variables 0..0, operand stack from 1
   constants:
     #0   int     2
     #1   int     1
@@ -979,7 +978,7 @@ def sum_squares(xs):
 ```text
 code 0: <module> (06-loops.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code total, line 2>  -> code 0.0
     #1   code    <code sum_squares, line 11>  -> code 0.1
@@ -1099,7 +1098,7 @@ square = lambda x: x * x
 ```text
 code 0: <module> (07-closures.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code make_adder, line 2>  -> code 0.0
     #1   code    <code counter, line 8>  -> code 0.1
@@ -1124,7 +1123,7 @@ code 0: <module> (07-closures.py, line 1)
 
 code 0.0: make_adder (07-closures.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..1, operand stack from 2
+  slots 134: variables 0..1, operand stack from 2
   constants:
     #0   code    <code add, line 3>  -> code 0.0.0
     #1   none    None
@@ -1162,7 +1161,7 @@ code 0.0.0: add (07-closures.py, line 3)
 
 code 0.1: counter (07-closures.py, line 8)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..1, operand stack from 2
+  slots 134: variables 0..1, operand stack from 2
   constants:
     #0   int     0
     #1   code    <code bump, line 10>  -> code 0.1.0
@@ -1241,7 +1240,7 @@ connect("example.org", timeout=5)
 ```text
 code 0: <module> (08-defaults.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 38: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code connect, line 2>  -> code 0.0
     #1   int     80
@@ -1319,7 +1318,7 @@ def forward(f, args, kw):
 ```text
 code 0: <module> (09-unpacking.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code unpack, line 2>  -> code 0.0
     #1   code    <code options, line 8>  -> code 0.1
@@ -1344,7 +1343,7 @@ code 0: <module> (09-unpacking.py, line 1)
 
 code 0.0: unpack (09-unpacking.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 137: variables 0..5, operand stack from 6
+  slots 138: variables 0..5, operand stack from 6
   constants:
     #0   none    None
   variables (slot):
@@ -1434,7 +1433,7 @@ def lookup(d, obj):
 ```text
 code 0: <module> (10-keyed-lookup.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code lookup, line 2>  -> code 0.0
     #1   NoneType None
@@ -1449,7 +1448,7 @@ code 0: <module> (10-keyed-lookup.py, line 1)
 
 code 0.0: lookup (10-keyed-lookup.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 135: variables 0..1, operand stack from 2
+  slots 134: variables 0..1, operand stack from 2
   constants:
     #0   str     'k'
     #1   int     1
@@ -1498,7 +1497,7 @@ def size(xs):
 ```text
 code 0: <module> (11-builtin-call.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code size, line 2>  -> code 0.0
     #1   NoneType None
@@ -1513,7 +1512,7 @@ code 0: <module> (11-builtin-call.py, line 1)
 
 code 0.0: size (11-builtin-call.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 131: variables 0..0, operand stack from 1
+  slots 132: variables 0..0, operand stack from 1
   constants:
     #0   none    None
   names:
@@ -1553,7 +1552,7 @@ def sum_squares(xs):
 ```text
 code 0: <module> (12-higher-order.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 34: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   str     'functools'
     #1   code    <code total, line 5>  -> code 0.0
@@ -1616,7 +1615,7 @@ code 0.0.0: <lambda> (12-higher-order.py, line 5)
 
 code 0.1: sum_squares (12-higher-order.py, line 9)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 133: variables 0..0, operand stack from 1
+  slots 136: variables 0..0, operand stack from 1
   constants:
     #0   code    <code <lambda>, line 9>  -> code 0.1.0
     #1   none    None
@@ -1682,7 +1681,7 @@ def fail():
 ```text
 code 0: <module> (13-exceptions.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code safe_div, line 2>  -> code 0.0
     #1   code    <code fail, line 12>  -> code 0.1
@@ -1780,7 +1779,7 @@ code 0.0: safe_div (13-exceptions.py, line 2)
 
 code 0.1: fail (13-exceptions.py, line 12)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 130: operand stack from 0
+  slots 131: operand stack from 0
   constants:
     #0   str     'bad'
     #1   none    None
@@ -1832,7 +1831,7 @@ squares = {x: x * x for x in range(3)}
 ```text
 code 0: <module> (14-decorators-comprehensions.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 36: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code trace, line 2>  -> code 0.0
     #1   code    <code double, line 7>  -> code 0.1
@@ -1910,7 +1909,7 @@ code 0.1: double (14-decorators-comprehensions.py, line 7)
           10  RETURN_VALUE                  0
 
 code 0.2: <listcomp> (14-decorators-comprehensions.py, line 10)
-  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  flags 0x10000003 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
   slots 134: variables 0..1, operand stack from 2
   constants:
     #0   int     2
@@ -1937,7 +1936,7 @@ code 0.2: <listcomp> (14-decorators-comprehensions.py, line 10)
           30  RETURN_VALUE                  0
 
 code 0.3: <dictcomp> (14-decorators-comprehensions.py, line 11)
-  flags 0x3 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
+  flags 0x10000003 (OPTIMIZED | NEWLOCALS), parameters 1 (0 positional-only, 0 keyword-only)
   slots 134: variables 0..1, operand stack from 2
   variables (slot):
     #0   .0
@@ -1990,7 +1989,7 @@ doubled = (x * 2 for x in range(3))
 ```text
 code 0: <module> (15-generators.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 36: operand stack from 0
+  slots 37: operand stack from 0
   constants:
     #0   code    <code countdown, line 2>  -> code 0.0
     #1   code    <code chain, line 8>  -> code 0.1
@@ -2123,7 +2122,7 @@ class Point:
 ```text
 code 0: <module> (16-shared-state.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 36: operand stack from 0
+  slots 38: operand stack from 0
   constants:
     #0   int     0
     #1   code    <code bump, line 5>  -> code 0.0
@@ -2169,7 +2168,7 @@ code 0.0: bump (16-shared-state.py, line 5)
 
 code 0.1: Point (16-shared-state.py, line 10)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 130: variables 0..0, operand stack from 1
+  slots 132: variables 0..0, operand stack from 1
   constants:
     #0   str     'Point'
     #1   code    <code __init__, line 11>  -> code 0.1.0
@@ -2240,7 +2239,7 @@ def label(name, n):
 ```text
 code 0: <module> (17-misc.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code read, line 2>  -> code 0.0
     #1   code    <code largest, line 7>  -> code 0.1
@@ -2265,7 +2264,7 @@ code 0: <module> (17-misc.py, line 1)
 
 code 0.0: read (17-misc.py, line 2)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 1 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..1, operand stack from 2
+  slots 133: variables 0..1, operand stack from 2
   constants:
     #0   none    None
   names:
@@ -2306,7 +2305,7 @@ code 0.0: read (17-misc.py, line 2)
 
 code 0.1: largest (17-misc.py, line 7)
   flags 0x17 (OPTIMIZED | NEWLOCALS | VARARGS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 132: variables 0..0, operand stack from 1
+  slots 133: variables 0..0, operand stack from 1
   constants:
     #0   none    None
   names:
@@ -2326,21 +2325,19 @@ code 0.1: largest (17-misc.py, line 7)
 
 code 0.2: label (17-misc.py, line 11)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 2 (0 positional-only, 0 keyword-only)
-  slots 134: variables 0..1, operand stack from 2
+  slots 133: variables 0..1, operand stack from 2
   constants:
     #0   str     ': '
     #1   none    None
-  names:
-    #0   repr
   variables (slot):
     #0   name
     #1   n
   code:
     11     0  LOAD_FAST                     0  ; name
-           2  LOAD_CONST                    0  ; ': '
-           4  LOAD_GLOBAL                   1  ; repr (+ NULL)
+           2  FORMAT_VALUE                  0
+           4  LOAD_CONST                    0  ; ': '
            6  LOAD_FAST                     1  ; n
-           8  CALL_FUNCTION                 1  ; 1 positional
+           8  FORMAT_VALUE                  2
           10  BUILD_STRING                  3
           12  RETURN_VALUE                  0
           14  LOAD_CONST                    1  ; None
@@ -2354,8 +2351,10 @@ code 0.2: label (17-misc.py, line 11)
   The handler at 38 calls `__exit__` with the exception and re-raises unless
   it returned a true value.
 - `max(*args)` is `CALL_FUNCTION_EX 0`.
-- `f"{name}: {n!r}"` is `BUILD_STRING 3`; `!r` is a call of the global
-  `repr`. Every part carries the f-string's line.
+- `f"{name}: {n!r}"` is `BUILD_STRING 3` over three parts; each field is
+  `FORMAT_VALUE` (here `FORMAT_VALUE 0` for `{name}` and `FORMAT_VALUE 2`,
+  conversion `!r`, for `{n!r}`), which formats as `format(value, spec)`
+  without looking up a name. Every part carries the f-string's line.
 
 ### Example 18: `match`
 
@@ -2374,7 +2373,7 @@ def kind(value):
 ```text
 code 0: <module> (18-match.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code kind, line 2>  -> code 0.0
     #1   NoneType None
@@ -2510,7 +2509,7 @@ async def collect(stream):
 ```text
 code 0: <module> (19-async.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code fetch, line 2>  -> code 0.0
     #1   code    <code collect, line 7>  -> code 0.1
@@ -2704,8 +2703,11 @@ static const proto::ProtoObject* py_len(
   prototypes in `PythonEnvironment::initializeRootObjects`. Use interned
   names (`getInternedString`).
 - **Arguments.** `positionalParameters->getSize(ctx)` and `getAt(ctx, i)`;
-  keyword arguments by the interned name's hash through
-  `keywordParameters`. Check the count yourself and raise CPython's
+  keyword arguments through `keywordParameters`, keyed by the interned
+  name's pointer as protoCore's calling convention defines
+  (`keywordParameters->getAt(ctx, PythonEnvironment::kwKey(ctx, name))`,
+  never the name's content hash); `env->keywordsInCallOrder(ctx,
+  keywordParameters)` enumerates them in call order. Check the count yourself and raise CPython's
   `TypeError`: nothing checks it for you (`len()` returned `None` until it
   did). `BuiltinsModule.cpp` has `requireArgs` for the common case.
 - **Errors.** Raise with `env->raiseTypeError(ctx, "...")`,

@@ -43,6 +43,7 @@ static bool is_str_instance(proto::ProtoContext* ctx, const proto::ProtoObject* 
 // object with tobytes() such as array.array); false for anything else.
 static bool extract_octets(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
     if (!obj || obj == PROTO_NONE) return false;
+    if (PythonEnvironment::bytesLikeContent(ctx, obj, out)) return true;
     if (obj->isString(ctx)) {
         obj->asString(ctx)->toUTF8String(ctx, out);
         return true;
@@ -58,15 +59,7 @@ static bool extract_octets(proto::ProtoContext* ctx, const proto::ProtoObject* o
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
-        // memoryview wrapper: __mv_data__ holds the underlying bytes /
-        // bytearray / ByteBuffer. Recurse to extract the raw octets so
-        // base64.b64encode(memoryview(b'…')) and friends round-trip.
-        const proto::ProtoObject* mv = obj->getAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "__mv_data__"));
-        if (mv && mv != PROTO_NONE && mv != obj) {
-            return extract_octets(ctx, mv, out);
-        }
-
+        // A memoryview was read by bytesLikeContent above.
         const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
         if (data && data != PROTO_NONE) {
             // Preferred form: ProtoByteBuffer with raw octets (preserves
@@ -168,7 +161,7 @@ static const proto::ProtoObject* make_bytes(proto::ProtoContext* ctx, const std:
     const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
         data.data(), static_cast<proto::proto_ulong>(data.size()));
     obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
-        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"),
+        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "\001__data__"),
         bb->asObject(ctx)));
     return obj;
 }
@@ -204,7 +197,7 @@ static const proto::ProtoObject* py_b2a_base64(
     bool newline = true;
     if (kwargs) {
         const proto::ProtoObject* nl = kwargs->getAt(ctx,
-            PythonEnvironment::getInternedString(ctx, "newline")->getHash(ctx));
+            PythonEnvironment::kwKey(ctx, PythonEnvironment::getInternedString(ctx, "newline")));
         if (nl && nl != PROTO_NONE) newline = (nl != PROTO_FALSE);
     }
 

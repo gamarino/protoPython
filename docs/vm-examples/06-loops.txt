@@ -1,6 +1,6 @@
 code 0: <module> (06-loops.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code total, line 2>  -> code 0.0
     #1   code    <code sum_squares, line 11>  -> code 0.1

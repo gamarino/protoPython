@@ -249,3 +249,47 @@ table depend on the build machine's Python. The same table can back
 `unicodedata.lookup` / `name` later; `unicodedata.py` is still a stub, and
 `unicode_escape` decoding is not implemented by the codecs module, so
 neither uses it yet.
+
+## Internal keys are spelled by one pair of functions (agent, pending review)
+
+**Decision (2026-11-11):** The runtime keeps its own state on objects under
+keys that start with U+0001 (`\x01__data__`, `\x01__keys__`, ...), which no
+identifier contains. A name Python code supplies (`setattr`, `getattr`,
+`__dict__`, `str.format` fields, `__prepare__` namespaces, ...) that itself
+starts with U+0001 is stored under an escaped spelling, so it can never reach
+an internal key. Only two functions apply the rule:
+`PythonEnvironment::pythonKeySpelling` (a Python name to its key) and
+`PythonEnvironment::storedKeyPythonName` (a stored key to its Python name);
+`pythonAttributeKey`, `pythonAttributeName`, `attributeKeySpelling` and the
+internal-name filters are built on them. `test/static/check_escape_boundary.py`
+(the `static_escape_boundary` ctest) works on statements (comments and line
+breaks removed) and fails on one that holds U+0001 as a char literal or a
+one-character string in any escape spelling (`'\x01'`, `'\1'`, `"\u0001"`, ...)
+or builds it from an integer (`char(1)`, `static_cast<char>(1)`) or keeps it in
+a char variable (`char sep = 1;`), or compares a name's first element with the
+integer 1 (also through a cast) or tests it as a control character (`< ' '`,
+`< 0x20`, `<= 0x1f`, the reversed `' ' > n[0]`, `std::iscntrl(n[0])`),
+outside a line marked
+`escape-boundary`, or that passes to a protoCore attribute call
+(`get`/`set`/`has`/`remove`/`delete...Attribute...`, or a member pointer to
+one) a key made from a run-time string (`->asString()`, or
+`getInternedString`, `createSymbol`, `ProtoString::fromUTF8String` of anything
+but a literal or a `const char*` name not taken from `.c_str()`), directly,
+through casts, through up to three locals assigned in the 80 lines above,
+returned by a lambda in view or by any function of the tree that returns a
+`ProtoString*`, outside a line marked `raw-key:` with its reason (a
+compiler-made name, a name from a C++ table, a stored key copied as it is).
+`static_escape_boundary_probe` runs it on
+`test/static/escape_boundary_probe.cc`, which holds the 8 bypass forms of the
+round-9 review and the 19 of the round-10 review, and requires each to be
+reported. It does not see a key built in another function and passed in, a
+helper that builds its key through a further call, a key kept in a member or
+a container, macros, overloaded operators, or helpers whose names do not end
+in `Attribute`; code objects built by Python (`code.replace(co_names=...)`)
+can also carry names the compiler would not produce.
+
+**Rationale:** In 1.2.2 the rule was re-implemented at about 70 call sites,
+and each review round found another entry point that skipped it (instance
+`__dict__.update`, star import, `super()`, `str.format` fields,
+`mappingproxy.get`). One pair plus a mechanical check makes a missed site a
+test failure instead of a leak of the runtime's state.

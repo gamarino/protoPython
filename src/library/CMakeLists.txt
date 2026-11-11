@@ -32,6 +32,8 @@ add_library(protoPython SHARED
     SignalModule.cpp
     TimeModule.cpp
     BuiltinsModule.cpp
+    BytearrayType.cpp
+    MemoryviewType.cpp
     IOModule.cpp
     CollectionsModule.cpp
     ExceptionsModule.cpp
@@ -45,6 +47,8 @@ add_library(protoPython SHARED
     ImpModule.cpp
     WarningsModule.cpp
     OpcodeModule.cpp
+    CodecsNative.cpp
+    NumberFormat.cpp
     StringModule.cpp
     BinasciiModule.cpp
     HashcoreModule.cpp

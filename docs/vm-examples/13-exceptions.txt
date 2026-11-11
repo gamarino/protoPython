@@ -1,6 +1,6 @@
 code 0: <module> (13-exceptions.py, line 1)
   flags 0x0, parameters 0 (0 positional-only, 0 keyword-only)
-  slots 33: operand stack from 0
+  slots 35: operand stack from 0
   constants:
     #0   code    <code safe_div, line 2>  -> code 0.0
     #1   code    <code fail, line 12>  -> code 0.1
@@ -98,7 +98,7 @@ code 0.0: safe_div (13-exceptions.py, line 2)
 
 code 0.1: fail (13-exceptions.py, line 12)
   flags 0x13 (OPTIMIZED | NEWLOCALS | NESTED), parameters 0 (0 positional-only, 0 keyword-only)
-  slots 130: operand stack from 0
+  slots 131: operand stack from 0
   constants:
     #0   str     'bad'
     #1   none    None
