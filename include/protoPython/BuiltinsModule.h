@@ -68,9 +68,6 @@ const proto::ProtoObject* py_type_prepare(
     const proto::ProtoArguments* positionalParameters,
     const proto::ProtoKeywordArguments* keywordParameters);
 
-/** A float formatted by a PEP 3101 spec, as float.__format__ does. */
-std::string formatFloatSpec(double val, const std::string& spec);
-
 const proto::ProtoObject* py_python_ignore_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,

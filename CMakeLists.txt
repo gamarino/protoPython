@@ -351,6 +351,14 @@ if(Python3_FOUND)
         ENVIRONMENT "PROTO_PYTHON=$<TARGET_FILE:protopy>"
         TIMEOUT 400
         LABELS "regression_gate")
+    # The escaping boundary: internal keys are spelled and unspelled only by
+    # PythonEnvironment's pair (test/static/check_escape_boundary.py).
+    add_test(NAME static_escape_boundary
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/static/check_escape_boundary.py)
+    set_tests_properties(static_escape_boundary PROPERTIES
+        TIMEOUT 60
+        PASS_REGULAR_EXPRESSION "check_escape_boundary: ok"
+        LABELS "regression_gate")
     add_test(NAME conformity_runner_selftest
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/conformity/test_run_conformity.py)
     set_tests_properties(conformity_runner_selftest PROPERTIES
@@ -694,6 +702,22 @@ set_tests_properties(protopy_review_round8_gc PROPERTIES
     TIMEOUT 600
     ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
     PASS_REGULAR_EXPRESSION "review_round8: ok"
+    LABELS "regression_gate")
+add_test(NAME protopy_review_round9
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/review_round9.py)
+set_tests_properties(protopy_review_round9 PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    PASS_REGULAR_EXPRESSION "review_round9: ok"
+    LABELS "regression_gate")
+# The same under GC pressure.
+add_test(NAME protopy_review_round9_gc
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/review_round9.py)
+set_tests_properties(protopy_review_round9_gc PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 600
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "review_round9: ok"
     LABELS "regression_gate")
 # A mutating __eq__ makes a dict or set lookup compare each stored key once.
 add_test(NAME protopy_hash_restart_memo

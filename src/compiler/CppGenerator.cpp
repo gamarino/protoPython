@@ -684,7 +684,7 @@ struct ScopeBuilder {
         if (auto* t = dynamic_cast<TupleLiteralNode*>(node)) { all(t->elements); return; }
         if (auto* st = dynamic_cast<SetLiteralNode*>(node)) { all(st->elements); return; }
         if (auto* d = dynamic_cast<DictLiteralNode*>(node)) { for (auto& k : d->keys) visit(k.get(), s); all(d->values); return; }
-        if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) { visit(fv->value.get(), s); return; }
+        if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) { visit(fv->value.get(), s); visit(fv->format_spec_node.get(), s); return; }
         if (auto* js = dynamic_cast<JoinedStrNode*>(node)) { all(js->values); return; }
         if (auto* aw = dynamic_cast<AwaitNode*>(node)) { visit(aw->value.get(), s); return; }
         if (auto* y = dynamic_cast<YieldNode*>(node)) { visit(y->value.get(), s); return; }
@@ -3671,6 +3671,7 @@ void CppGenerator::collectNameRefs(ASTNode* node, std::unordered_set<std::string
         for (auto& v : n->values) collectNameRefs(v.get(), refs);
     } else if (auto* n = dynamic_cast<FormattedValueNode*>(node)) {
         collectNameRefs(n->value.get(), refs);
+        if (n->format_spec_node) collectNameRefs(n->format_spec_node.get(), refs);
     } else if (auto* n = dynamic_cast<StarredNode*>(node)) {
         collectNameRefs(n->value.get(), refs);
     } else if (auto* n = dynamic_cast<NamedExprNode*>(node)) {

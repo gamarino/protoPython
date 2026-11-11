@@ -190,7 +190,7 @@ static bool containsYield(const ASTNode* n) {
         return false;
     }
     if (auto* f = dynamic_cast<const FormattedValueNode*>(n)) {
-        return containsYield(f->value.get());
+        return containsYield(f->value.get()) || containsYield(f->format_spec_node.get());
     }
     if (auto* ne = dynamic_cast<const NamedExprNode*>(n)) {
         return containsYield(ne->target.get()) || containsYield(ne->value.get());
@@ -1544,22 +1544,10 @@ std::unique_ptr<ASTNode> Parser::parseLambda() {
     return node;
 }
 
-std::unique_ptr<ASTNode> Parser::parseFString() {
-    std::string raw = cur_.value;
-    // Line of the f-string's first character; a part's line counts the
-    // newlines before it (a triple-quoted f-string spans lines).
-    const int fstringLine = cur_.line;
+bool Parser::parseFStringBody(const std::string& raw, int firstLine, JoinedStrNode* joined, int specDepth) {
     auto lineAt = [&](size_t offset) {
-        return fstringLine + static_cast<int>(std::count(raw.begin(), raw.begin() + static_cast<std::ptrdiff_t>(std::min(offset, raw.size())), '\n'));
+        return firstLine + static_cast<int>(std::count(raw.begin(), raw.begin() + static_cast<std::ptrdiff_t>(std::min(offset, raw.size())), '\n'));
     };
-    auto joined = createNode<JoinedStrNode>();
-    // Propagate the lexer's t-prefix flag so downstream stages
-    // (missed-comma analyzer, runtime type reporting) can distinguish
-    // PEP 750 t-strings from PEP 498 f-strings.  Both share the same
-    // interpolation AST but are reported as distinct runtime types.
-    joined->isTString = cur_.isTString;
-    advance(); // FString token
-    
     size_t i = 0;
     while (i < raw.size()) {
         size_t nextOpen = raw.find('{', i);
@@ -1609,7 +1597,7 @@ std::unique_ptr<ASTNode> Parser::parseFString() {
                 
                 if (closeBrace == std::string::npos) {
                     error("f-string: missing '}'");
-                    return nullptr;
+                    return false;
                 }
                 std::string fullExprStr = raw.substr(i, closeBrace - i);
                 const int exprLine = lineAt(i);
@@ -1649,13 +1637,25 @@ std::unique_ptr<ASTNode> Parser::parseFString() {
                 auto expr = subParser.parseExpression();
                 if (subParser.hasError()) {
                     error("f-string expression error: " + subParser.getLastErrorMsg());
-                    return nullptr;
+                    return false;
                 }
                 auto fv = createNode<FormattedValueNode>();
                 fv->line = exprLine;
                 fv->value = std::move(expr);
                 fv->conversion = conversion;
-                fv->format_spec = format_spec;
+                if (format_spec.find('{') != std::string::npos || format_spec.find('}') != std::string::npos) {
+                    // Replacement fields in the spec: evaluated, then joined.
+                    if (specDepth >= 2) {
+                        error("f-string: expressions nested too deeply");
+                        return false;
+                    }
+                    auto spec = createNode<JoinedStrNode>();
+                    spec->line = exprLine;
+                    if (!parseFStringBody(format_spec, exprLine, spec.get(), specDepth + 1)) return false;
+                    fv->format_spec_node = std::move(spec);
+                } else {
+                    fv->format_spec = format_spec;
+                }
                 joined->values.push_back(std::move(fv));
             }
         } else if (i < raw.size() && raw[i] == '}') {
@@ -1667,10 +1667,26 @@ std::unique_ptr<ASTNode> Parser::parseFString() {
                 i += 2;
             } else {
                 error("f-string: single '}' is not allowed");
-                return nullptr;
+                return false;
             }
         }
     }
+    return true;
+}
+
+std::unique_ptr<ASTNode> Parser::parseFString() {
+    std::string raw = cur_.value;
+    // Line of the f-string's first character; a part's line counts the
+    // newlines before it (a triple-quoted f-string spans lines).
+    const int fstringLine = cur_.line;
+    auto joined = createNode<JoinedStrNode>();
+    // Propagate the lexer's t-prefix flag so downstream stages
+    // (missed-comma analyzer, runtime type reporting) can distinguish
+    // PEP 750 t-strings from PEP 498 f-strings.  Both share the same
+    // interpolation AST but are reported as distinct runtime types.
+    joined->isTString = cur_.isTString;
+    advance(); // FString token
+    if (!parseFStringBody(raw, fstringLine, joined.get(), 0)) return nullptr;
     // The literal parts were created after the f-string token was consumed;
     // they belong to the f-string's line, not to the next token's.
     joined->line = fstringLine;

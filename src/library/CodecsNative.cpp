@@ -252,6 +252,40 @@ CODEC_FN(py_charmap_encode) {
     return pair(ctx, PythonEnvironment::newBytes(ctx, out.data(), out.size()), i);
 }
 
+// charmap_encode_dict(s, start, mapping) -> (bytes, stop): characters
+// through a dict encoding map (codecs.make_encoding_map's: code point to a
+// byte value or a bytes object), up to one the map does not hold or maps
+// to None. `mapping` is an exact dict; the caller handles the rest.
+CODEC_FN(py_charmap_encode_dict) {
+    const std::vector<uint32_t> cps = codePoints(ctx, argAt(ctx, args, 0, 3, "charmap_encode_dict"), "charmap_encode_dict");
+    long long i = intArg(ctx, args->getAt(ctx, 1), "charmap_encode_dict");
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const PO* mapping = args->getAt(ctx, 2);
+    const PO* data = env && mapping ? mapping->getAttribute(ctx, env->getDataString()) : nullptr;
+    const proto::ProtoSparseList* items = data ? data->asSparseList(ctx) : nullptr;
+    if (!items) raiseType(ctx, "charmap_encode_dict(): mapping must be a dict");
+    const long long n = static_cast<long long>(cps.size());
+    if (i < 0) i = 0;
+    std::string out;
+    out.reserve(static_cast<size_t>(n > i ? n - i : 0));
+    std::string bytesValue;
+    for (; i < n; ++i) {
+        const PO* key = ctx->fromInteger(static_cast<long long>(cps[static_cast<size_t>(i)]));
+        const PO* v = PythonEnvironment::dictDataGet(ctx, items, key);
+        if (!v || v == PROTO_NONE) break;
+        if (v->isInteger(ctx)) {
+            const long long b = v->asLong(ctx);
+            if (b < 0 || b > 255) break;  // the caller raises CPython's TypeError
+            out.push_back(static_cast<char>(b));
+        } else if (PythonEnvironment::bytesLikeContent(ctx, v, bytesValue)) {
+            out += bytesValue;
+        } else {
+            break;
+        }
+    }
+    return pair(ctx, PythonEnvironment::newBytes(ctx, out.data(), out.size()), i);
+}
+
 // UTF-7 (RFC 2152), as CPython's encoder: direct characters as themselves,
 // everything else in base64 shift sequences of UTF-16 units.
 const char kB64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -393,6 +427,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     fn("utf32_decode", py_utf32_decode);
     fn("charmap_decode", py_charmap_decode);
     fn("charmap_encode", py_charmap_encode);
+    fn("charmap_encode_dict", py_charmap_encode_dict);
     fn("utf7_encode", py_utf7_encode);
     fn("utf7_decode", py_utf7_decode);
     mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"),

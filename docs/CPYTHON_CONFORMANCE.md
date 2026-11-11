@@ -90,8 +90,8 @@ defect and adds a `test/regression/*.py` test registered in
   (`range(1 << 1000)` raises; CPython's `longrange_iterator` does not exist);
   `type(iter(range(0)))` is `object` and built-in iterator types leave themselves
   out of their `__mro__`; `reversed()` ignores `__reversed__ = None`;
-  `'{0.__class__.__name__}'.format(x)` gives `'type'` for any object;
-  `hash(frozenset(...))` uses another algorithm; `isinstance(len,
+  `complex.__format__` takes only an empty spec (`format(1+2j, '.2f')`
+  raises `TypeError`); `hash(frozenset(...))` uses another algorithm; `isinstance(len,
   collections.abc.Callable)` is False; `vars(exc)` shows `args`; the
   abstract-instantiation `TypeError` does not name the methods.
 - **Dict views and namespaces (found 2026-11-10, review of 1.2.2):**
@@ -159,7 +159,14 @@ defect and adds a `test/regression/*.py` test registered in
   `with memoryview(ba)` makes the view and then holds it: a resize by another
   thread between the two raises `BufferError` (the view is then stale) at the
   `with`, where CPython's view is an export from its creation. A view made by
-  `__buffer__` holds its export from the start. A `with` block inside a
+  `__buffer__` holds its export from the start. For an object whose
+  `__buffer__` is Python code (PEP 688), `memoryview(obj)` calls
+  `obj.__release_buffer__(view)` once, when the view is released by
+  `release()` or at the end of its `with` block; a view dropped without
+  either is never released (nothing tells protoPython when its last
+  reference goes), so the exporter keeps that export, and a bytearray behind
+  it stays non-resizable, until the program ends. CPython releases it with
+  the last reference. A `with` block inside a
   generator that is never resumed holds its export until the program ends
   (no finalisation runs for it). A view of an `array.array` is a read-only
   snapshot of the array when the view was made.

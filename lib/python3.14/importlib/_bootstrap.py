@@ -1354,7 +1354,10 @@ def _find_and_load_unlocked(name, import_):
         try:
             native_mod = _imp.create_builtin(native_spec)
         except ModuleNotFoundError as exc:
-            if exc.name is not None and exc.name != name:
+            # The loader's own "not found" for `name`; any other
+            # ModuleNotFoundError (a missing dependency, or one the module
+            # raised itself, even under its own name) propagates as it is.
+            if exc.name != name or exc.args != (f'{_ERR_MSG_PREFIX}{name!r}',):
                 raise
             native_mod = None
         if native_mod is not None:

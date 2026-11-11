@@ -483,7 +483,12 @@ MV_METHOD(mv_new_impl) {
             if (!r) return nullptr;
             if (!isMemoryview(ctx, r)) raiseType(ctx, "__buffer__ returned non-memoryview object");
             loadView(ctx, r, v);
-            return storeView(ctx, cls, v);
+            // The view remembers the export: its release() hands `r` back
+            // through obj.__release_buffer__, as CPython's does.
+            const PO* mv = storeView(ctx, cls, v);
+            mv->setAttribute(ctx, MV_KEY(ctx, "pyexporter"), obj);
+            mv->setAttribute(ctx, MV_KEY(ctx, "pyview"), r);
+            return mv;
         }
     }
     raiseType(ctx, "memoryview: a bytes-like object is required, not '" + PythonEnvironment::typeNameOf(ctx, obj) + "'");
@@ -643,6 +648,14 @@ const PO* releaseView(proto::ProtoContext* ctx, const PO* mv) {
             View v;
             loadView(ctx, mv, v, /*allowReleased=*/true);
             bytearrayHold(ctx, v.data, v.epoch, -1);
+        }
+        // A view of an object with a Python __buffer__ gives the export back
+        // to it (PEP 688), once: only the thread that released it gets here.
+        const PO* exporter = mv->getOwnAttributeDirect(ctx, MV_KEY(ctx, "pyexporter"));
+        const PO* inner = mv->getOwnAttributeDirect(ctx, MV_KEY(ctx, "pyview"));
+        if (exporter && inner) {
+            PythonEnvironment* env = envOf(ctx);
+            if (env && !env->callMethod(exporter, "__release_buffer__", {inner})) return nullptr;
         }
         return PROTO_NONE;
     }
@@ -827,9 +840,10 @@ MV_METHOD(mv_buffer) {
 MV_METHOD(mv_release_buffer) {
     (void)link; (void)kwargs;
     unsigned shift = 0;
-    receiver(ctx, self, args, shift, "__release_buffer__");
-    if (argc(ctx, args, shift) == 1 && isMemoryview(ctx, arg(ctx, args, shift, 0))) releaseView(ctx, arg(ctx, args, shift, 0));
-    return PROTO_NONE;
+    const PO* mv = receiver(ctx, self, args, shift, "__release_buffer__");
+    if (argc(ctx, args, shift) != 1) raiseType(ctx, "__release_buffer__() takes exactly one argument");
+    const PO* owner = mv->getOwnAttributeDirect(ctx, MV_KEY(ctx, "data"));
+    return memoryviewReleaseBuffer(ctx, owner, arg(ctx, args, shift, 0));
 }
 
 // --- read-only attributes --------------------------------------------------------
@@ -878,6 +892,16 @@ bool memoryviewWrite(proto::ProtoContext* ctx, const proto::ProtoObject* obj, si
     if (!loadView(ctx, obj, v)) return false;
     viewWrite(ctx, v, at, data);
     return true;
+}
+
+const proto::ProtoObject* memoryviewReleaseBuffer(proto::ProtoContext* ctx, const proto::ProtoObject* owner,
+                                                  const proto::ProtoObject* view) {
+    if (!isMemoryview(ctx, view)) raiseType(ctx, "expected a memoryview object");
+    if (intAttr(ctx, view, MV_KEY(ctx, "state"), kLive) == kReleased)
+        raiseValue(ctx, "memoryview's buffer has already been released");
+    if (view->getOwnAttributeDirect(ctx, MV_KEY(ctx, "data")) != owner)
+        raiseValue(ctx, "memoryview's buffer is not this object");
+    return releaseView(ctx, view);
 }
 
 const proto::ProtoObject* memoryviewExporter(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {

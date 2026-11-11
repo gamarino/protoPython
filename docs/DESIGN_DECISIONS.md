@@ -249,3 +249,26 @@ table depend on the build machine's Python. The same table can back
 `unicodedata.lookup` / `name` later; `unicodedata.py` is still a stub, and
 `unicode_escape` decoding is not implemented by the codecs module, so
 neither uses it yet.
+
+## Internal keys are spelled by one pair of functions (agent, pending review)
+
+**Decision (2026-11-11):** The runtime keeps its own state on objects under
+keys that start with U+0001 (`\x01__data__`, `\x01__keys__`, ...), which no
+identifier contains. A name Python code supplies (`setattr`, `getattr`,
+`__dict__`, `str.format` fields, `__prepare__` namespaces, ...) that itself
+starts with U+0001 is stored under an escaped spelling, so it can never reach
+an internal key. Only two functions apply the rule:
+`PythonEnvironment::pythonKeySpelling` (a Python name to its key) and
+`PythonEnvironment::storedKeyPythonName` (a stored key to its Python name);
+`pythonAttributeKey`, `pythonAttributeName`, `attributeKeySpelling` and the
+internal-name filters are built on them. `test/static/check_escape_boundary.py`
+(the `static_escape_boundary` ctest) fails on a source line that tests a key
+for U+0001 or prepends it outside a line marked `escape-boundary`, or that
+uses a string it did not escape as an attribute key outside a line marked
+`raw-key:` with its reason (a name the compiler produced).
+
+**Rationale:** In 1.2.2 the rule was re-implemented at about 70 call sites,
+and each review round found another entry point that skipped it (instance
+`__dict__.update`, star import, `super()`, `str.format` fields,
+`mappingproxy.get`). One pair plus a mechanical check makes a missed site a
+test failure instead of a leak of the runtime's state.

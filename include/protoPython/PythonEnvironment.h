@@ -214,6 +214,13 @@ public:
      * unreachable.
      */
     static const proto::ProtoObject* newStr(proto::ProtoContext* ctx, const std::string& str);
+    /** format(int, spec) / format(float, spec): the result, or nullptr with the exception raised. */
+    static const proto::ProtoObject* formatIntObject(proto::ProtoContext* ctx, const proto::ProtoObject* value,
+                                                     const std::string& spec);
+    static const proto::ProtoObject* formatFloatObject(proto::ProtoContext* ctx, double value,
+                                                       const std::string& spec);
+    static const proto::ProtoObject* formatStringObject(proto::ProtoContext* ctx, const std::string& value,
+                                                        const std::string& spec);
     
     /**
      * @brief The interned symbol spelled by a string literal.
@@ -243,14 +250,26 @@ public:
     static bool isInternalKeySpelling(const std::string& name) {
         return !name.empty() && name[0] == '\x01';
     }
+    /*
+     * The escaping boundary. Every name Python code supplies becomes a key
+     * through pythonKeySpelling(), and every stored key Python code sees
+     * becomes a name through storedKeyPythonName(); the other helpers below
+     * (pythonAttributeKey, pythonAttributeName, attributeKeySpelling) are
+     * these two on ProtoStrings. test/static/check_escape_boundary.py keeps
+     * the rule from being re-implemented elsewhere.
+     */
+    /** The key spelling of a Python name: a name that starts with U+0001
+     *  gets one more U+0001, so it never equals an internal key. */
+    static std::string pythonKeySpelling(const std::string& name) {
+        return isInternalKeySpelling(name) ? "\x01" + name : name;  // escape-boundary
+    }
     /**
-     * The Python name a stored key spells, for enumerations that work on
-     * UTF-8: false for an internal key; an escaped key loses its added
-     * U+0001; any other key is its own name.
+     * The Python name a stored key spells: false for an internal key; an
+     * escaped key loses its added U+0001; any other key is its own name.
      */
     static bool storedKeyPythonName(const std::string& stored, std::string& out) {
         if (!isInternalKeySpelling(stored)) { out = stored; return true; }
-        if (stored.size() < 2 || stored[1] != '\x01') return false;
+        if (stored.size() < 2 || stored[1] != '\x01') return false;  // escape-boundary
         out = stored.substr(1);
         return true;
     }
@@ -262,9 +281,18 @@ public:
      * Every other name is its interned symbol.
      */
     static const proto::ProtoString* pythonAttributeKey(proto::ProtoContext* ctx, const proto::ProtoString* name);
+    /**
+     * Same for a lookup that must not intern the name (a namespace probe
+     * such as `name in globals()`): an ordinary name is returned as it is,
+     * and protoCore reads the attribute by its content; only a name that
+     * needs escaping goes through pythonAttributeKey().
+     */
+    static const proto::ProtoString* pythonLookupKey(proto::ProtoContext* ctx, const proto::ProtoString* name) {
+        return isInternalKey(ctx, name) ? pythonAttributeKey(ctx, name) : name;
+    }
     /** Same, for a name already spelled as UTF-8. */
     static const proto::ProtoString* pythonAttributeKey(proto::ProtoContext* ctx, const std::string& name) {
-        return isInternalKeySpelling(name) ? getInternedString(ctx, "\x01" + name) : getInternedString(ctx, name);
+        return getInternedString(ctx, pythonKeySpelling(name));
     }
     /** The name an attribute key spells for a message: the Python name of
      *  an escaped key, the key's own text otherwise. */
@@ -902,6 +930,17 @@ public:
     bool isOverflowError(proto::ProtoContext* ctx, const proto::ProtoException& e) const;
     /** integer->asLong(ctx), false when the integer does not fit in 64 bits. */
     static bool tryAsLong(proto::ProtoContext* ctx, const proto::ProtoObject* integer, long long& out);
+    /**
+     * int / int as CPython computes it: the correctly rounded float of the
+     * exact quotient, at any size. False, with OverflowError ("integer
+     * division result too large for a float") raised, when it is out of the
+     * float range. The divisor is non-zero.
+     */
+    static bool intTrueDivide(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b,
+                              double& out);
+    /** float(int) as CPython converts it (round-half-even); false, with
+     *  OverflowError "int too large to convert to float" raised, past the range. */
+    static bool intToDouble(proto::ProtoContext* ctx, const proto::ProtoObject* integer, double& out);
     /** Inside a catch of `e`: rethrows it unless it is protoCore's Overflow
      *  error (an integer outside the 64-bit range, raised by asLong). */
     static void rethrowUnlessOverflow(proto::ProtoContext* ctx, const proto::ProtoException& e);
@@ -1627,6 +1666,7 @@ public:
     void raiseRecursionError(proto::ProtoContext* context);
     void raiseAssertionError(proto::ProtoContext* ctx, const proto::ProtoObject* msg = nullptr);
     void raiseZeroDivisionError(proto::ProtoContext* ctx);
+    void raiseZeroDivisionError(proto::ProtoContext* ctx, const std::string& msg);
     // OverflowError(msg), the builtin type.
     void raiseOverflowError(proto::ProtoContext* ctx, const std::string& msg);
     void raiseIndexError(proto::ProtoContext* context, const std::string& msg);
@@ -2555,17 +2595,21 @@ public:
         // Every built-in type that binds the function (set and frozenset
         // share theirs); an unbound call accepts an instance of any of them.
         std::vector<const proto::ProtoObject*> owners;
+        // The owner is a class (not the builtins module): an unbound call
+        // binds a receiver. Set once registration is complete.
+        bool descriptor{false};
     };
     /**
      * The method_descriptor call step: `T.m(x, *a)` reaches a native method
      * with no receiver. When @p fn is a built-in type's instance method,
      * @p self becomes the first argument, checked to be an instance of the
      * owning type as CPython checks it ("descriptor 'm' for 'T' objects
-     * doesn't apply to a 'X' object"), and @p args loses it. Returns false
-     * after raising TypeError; true otherwise (also when nothing applies).
+     * doesn't apply to a 'X' object"), and @p shift is set to 1: the call
+     * passes the arguments after it. Returns false after raising TypeError;
+     * true otherwise (also when nothing applies).
      */
     bool bindUnboundDescriptorCall(proto::ProtoContext* ctx, proto::ProtoMethod fn,
-                                   const proto::ProtoObject*& self, const proto::ProtoList*& args);
+                                   const proto::ProtoObject*& self, const proto::ProtoList* args, unsigned& shift);
 private:
     std::unordered_map<const void*, NativeMethodInfo> nativeMethodNames_;
 public:

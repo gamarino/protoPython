@@ -687,23 +687,45 @@ except TypeError:
     pass
 else:
     raise AssertionError('memoryview subclassed')
-# An item read is O(itemsize), not a copy of the whole buffer.
+# An item read is O(itemsize), not a copy of the whole buffer: 1,024 reads
+# of a 4 MiB view cost about what 1,024 reads of a 4 KiB view do (a copy
+# per read costs hundreds of times more). A ratio of two runs in the same
+# process, not a wall-clock limit, so a loaded machine does not fail it.
 import time
-big = memoryview(bytearray(1 << 22))
-t = time.perf_counter()
-for i in range(0, 1 << 22, 1 << 12):
-    big[i]
-assert time.perf_counter() - t < 0.5, time.perf_counter() - t
+def best(f):
+    r = []
+    for _ in range(3):
+        t = time.perf_counter(); f(); r.append(time.perf_counter() - t)
+    return min(r)
+def reads(m, step):
+    for i in range(0, len(m), step):
+        m[i]
+big = memoryview(bytearray(1 << 22)); small = memoryview(bytearray(1 << 12))
+ratio = best(lambda: reads(big, 1 << 12)) / best(lambda: reads(small, 4))
+assert ratio < 20, ratio
 '''
 
 SECTIONS['M4_codecs'] = r'''
 import codecs, time
+def best(f):
+    r = []
+    for _ in range(3):
+        t = time.perf_counter(); f(); r.append(time.perf_counter() - t)
+    return min(r)
+def pyloop(src):
+    n = 0
+    for c in src:
+        n += 1
+    return n
 s = 'h\xe9llo w\u20acrld \U0001f600 ' * 4000
 for enc in ('utf-16', 'utf-16-le', 'utf-16-be', 'utf-32', 'utf-32-be', 'utf-7', 'cp1252', 'cp437', 'koi8-r'):
     src = s if enc not in ('cp1252', 'cp437', 'koi8-r') else s.encode(enc, 'replace').decode(enc)
-    t = time.perf_counter()
     assert src.encode(enc).decode(enc) == src, enc
-    assert time.perf_counter() - t < 2.0, (enc, time.perf_counter() - t)
+    # Natively: a round trip costs a fraction of one Python-level pass over
+    # the text (a Python loop per character costs tens of passes). A ratio,
+    # not a wall-clock limit, so a loaded machine does not fail it.
+    ratio = best(lambda: src.encode(enc).decode(enc)) / best(lambda: pyloop(src))
+    assert ratio < 3, (enc, ratio)
 assert 'a\U0001f600'.encode('utf-16-le') == b'a\x00=\xd8\x00\xde'
 assert 'A\u2262\u0391.'.encode('utf-7') == b'A+ImIDkQ.' and b'A+ImIDkQ.'.decode('utf-7') == 'A\u2262\u0391.'
 assert b'+2D3'.decode('utf-7', 'replace') == '\ufffd'

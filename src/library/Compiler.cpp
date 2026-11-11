@@ -2844,7 +2844,7 @@ static void collectWalrusTargets(ASTNode* node, OrderedNameSet& out) {
     if (auto* t = dynamic_cast<TupleLiteralNode*>(node)) return eachOf(t->elements);
     if (auto* st = dynamic_cast<SetLiteralNode*>(node)) return eachOf(st->elements);
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) { eachOf(d->keys); return eachOf(d->values); }
-    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return each({fv->value.get()});
+    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return each({fv->value.get(), fv->format_spec_node.get()});
     if (auto* js = dynamic_cast<JoinedStrNode*>(node)) return eachOf(js->values);
     if (auto* aw = dynamic_cast<AwaitNode*>(node)) return each({aw->value.get()});
     if (auto* y = dynamic_cast<YieldNode*>(node)) return each({y->value.get()});
@@ -3191,6 +3191,7 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
     }
     if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) {
         collectUsedNames(fv->value.get(), out);
+        if (fv->format_spec_node) collectUsedNames(fv->format_spec_node.get(), out);
         return;
     }
     if (auto* s = dynamic_cast<SuiteNode*>(node)) {
@@ -3925,6 +3926,7 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
         for (auto& v : js->values) collectCapturedNamesImpl(v.get(), globalsInScope, capturedOut, depth);
     } else if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) {
         collectCapturedNamesImpl(fv->value.get(), globalsInScope, capturedOut, depth);
+        if (fv->format_spec_node) collectCapturedNamesImpl(fv->format_spec_node.get(), globalsInScope, capturedOut, depth);
     } else if (auto* iff = dynamic_cast<IfNode*>(node)) {
         collectCapturedNamesImpl(iff->test.get(), globalsInScope, capturedOut, depth);
         collectCapturedNamesImpl(iff->body.get(), globalsInScope, capturedOut, depth);
@@ -4535,7 +4537,7 @@ bool bindsNameElsewhere(ASTNode* node, const std::string& name, const ASTNode* e
     if (auto* t = dynamic_cast<TupleLiteralNode*>(node)) return anyOf(t->elements);
     if (auto* st = dynamic_cast<SetLiteralNode*>(node)) return anyOf(st->elements);
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) return anyOf(d->keys) || anyOf(d->values);
-    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return any({fv->value.get()});
+    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return any({fv->value.get(), fv->format_spec_node.get()});
     if (auto* js = dynamic_cast<JoinedStrNode*>(node)) return anyOf(js->values);
     if (auto* ne = dynamic_cast<NamedExprNode*>(node))
         return targetBindsName(ne->target.get(), name, except) || any({ne->value.get()});
@@ -6682,7 +6684,7 @@ bool Compiler::compileFormattedValue(FormattedValueNode* n) {
     // OP_CALL_FUNCTION 2.  Otherwise leave the bare (possibly
     // converted) value on the stack — the surrounding OP_BUILD_STRING
     // handles the str() coercion at join time.
-    if (!n->format_spec.empty()) {
+    if (!n->format_spec.empty() || n->format_spec_node) {
         if (!emitNameOp("format", TargetCtx::Load, /*pushNull=*/true)) return false;
         if (convName) {
             if (!emitNameOp(convName, TargetCtx::Load, /*pushNull=*/true)) return false;
@@ -6691,9 +6693,14 @@ bool Compiler::compileFormattedValue(FormattedValueNode* n) {
         } else {
             if (!compileNode(n->value.get())) return false;
         }
-        int specIdx = addConstant(PythonEnvironment::getInternedString(
-            ctx_, n->format_spec.c_str())->asObject(ctx_));
-        emit(OP_LOAD_CONST, specIdx);
+        if (n->format_spec_node) {
+            // f'{x:{width}}': the spec is itself an f-string.
+            if (!compileNode(n->format_spec_node.get())) return false;
+        } else {
+            int specIdx = addConstant(PythonEnvironment::getInternedString(
+                ctx_, n->format_spec.c_str())->asObject(ctx_));
+            emit(OP_LOAD_CONST, specIdx);
+        }
         emit(OP_CALL_FUNCTION, 2);
         return true;
     }

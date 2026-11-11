@@ -28,6 +28,15 @@ bool memoryviewContent(proto::ProtoContext* ctx, const proto::ProtoObject* obj, 
 /** Writes `data` at byte offset `at` of the view's content, in one publish. */
 bool memoryviewWrite(proto::ProtoContext* ctx, const proto::ProtoObject* obj, size_t at, const std::string& data);
 
+/**
+ * `owner.__release_buffer__(view)`: releases `view`, a view of `owner`'s
+ * bytes that `owner.__buffer__` returned. Raises TypeError for anything but
+ * a memoryview and ValueError for a released view or a view of another
+ * object, as CPython does.
+ */
+const proto::ProtoObject* memoryviewReleaseBuffer(proto::ProtoContext* ctx, const proto::ProtoObject* owner,
+                                                  const proto::ProtoObject* view);
+
 /** The object a memoryview exports (its `obj`), or nullptr. */
 const proto::ProtoObject* memoryviewExporter(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 

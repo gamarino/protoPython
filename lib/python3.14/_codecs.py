@@ -893,9 +893,16 @@ def charmap_encode(s, errors=None, mapping=None):
     i = 0
     n = len(s)
     table = getattr(mapping, '_table', None) if type(mapping) is _EncodingMap else None
+    exact_dict = type(mapping) is dict
     while i < n:
         if table is not None:
             chunk, i = _codecs_native.charmap_encode(s, i, table)
+            out += chunk
+            if i >= n:
+                break
+        elif exact_dict:
+            # codecs.make_encoding_map's dict (cp437, cp850, ...): natively.
+            chunk, i = _codecs_native.charmap_encode_dict(s, i, mapping)
             out += chunk
             if i >= n:
                 break

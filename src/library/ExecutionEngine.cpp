@@ -2401,27 +2401,6 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
             return PROTO_NONE;
         }
     }
-    // Python: int / int always returns float.  protoCore's native integer
-    // divide rounds toward zero (C semantics), so we must explicitly
-    // convert through double here.  For bignum we go via the decimal
-    // string (std::stod handles values up to DBL_MAX, returning inf
-    // beyond that — matching CPython's OverflowError-or-inf behavior
-    // modulo the exception channel).
-    auto intToDouble = [&](const proto::ProtoObject* o) -> double {
-        long long asInt = 0;
-        if (PythonEnvironment::tryAsLong(ctx, o, asInt)) return static_cast<double>(asInt);
-        {
-            const proto::ProtoString* s = o->asIntegerString(ctx, 10);
-            std::string digits;
-            s->toUTF8String(ctx, digits);
-            try { return std::stod(digits); }
-            catch (const std::out_of_range&) {
-                return (digits.size() && digits[0] == '-')
-                    ? -std::numeric_limits<double>::infinity()
-                    :  std::numeric_limits<double>::infinity();
-            }
-        }
-    };
     // Numeric primitive path only taken when both operands are exactly the
     // built-in numeric types — subclasses with overridden __truediv__
     // route through binaryOpDispatch below.
@@ -2432,10 +2411,20 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
             return PROTO_NONE;
         }
         if (aa->isInteger(ctx) && bb->isInteger(ctx)) {
-            return ctx->fromDouble(intToDouble(aa) / intToDouble(bb));
+            long long x = 0, y = 0;
+            // Two ints within 2**53 are exact doubles: one rounding.
+            if (PythonEnvironment::tryAsLong(ctx, aa, x) && PythonEnvironment::tryAsLong(ctx, bb, y)
+                    && x >= -(1LL << 53) && x <= (1LL << 53) && y >= -(1LL << 53) && y <= (1LL << 53))
+                return ctx->fromDouble(static_cast<double>(x) / static_cast<double>(y));
+            double q = 0.0;
+            if (!PythonEnvironment::intTrueDivide(ctx, aa, bb, q)) return nullptr;
+            return ctx->fromDouble(q);
         }
-        double da = aa->isDouble(ctx) ? aa->asDouble(ctx) : intToDouble(aa);
-        double db = bb->isDouble(ctx) ? bb->asDouble(ctx) : intToDouble(bb);
+        double da = 0.0, db = 0.0;
+        if (aa->isDouble(ctx)) da = aa->asDouble(ctx);
+        else if (!PythonEnvironment::intToDouble(ctx, aa, da)) return nullptr;
+        if (bb->isDouble(ctx)) db = bb->asDouble(ctx);
+        else if (!PythonEnvironment::intToDouble(ctx, bb, db)) return nullptr;
         return ctx->fromDouble(da / db);
     }
     // User-class fallback: __truediv__ / __rtruediv__ via invokePythonCallable.
@@ -3067,11 +3056,15 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         const proto::ProtoObject* self = callable->asMethodSelf(ctx);
         // `T.m(x, *a)`: a built-in type's method called through the type
         // takes its receiver from the arguments (method_descriptor call).
-        if (!self && env && !env->bindUnboundDescriptorCall(ctx, method, self, args)) return nullptr;
+        unsigned shift = 0;
+        if (!self && env && !env->bindUnboundDescriptorCall(ctx, method, self, args, shift)) return nullptr;
         const proto::ProtoObject* result = nullptr;
         try {
+            // The receiver bound from the arguments is not passed again.
+            const proto::ProtoListArguments all(ctx, args);
+            const proto::ProtoArguments rest(all.values() + shift, all.count() - shift);
             result = method(
-                ctx, const_cast<proto::ProtoObject*>(self), nullptr, argsView(proto::ProtoListArguments(ctx, args)), kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
+                ctx, const_cast<proto::ProtoObject*>(self), nullptr, shift ? &rest : &all, kwargsView(proto::ProtoSparseListKeywordArguments(ctx, kwargs)));
         } catch (const std::exception& e) {
             // The native-call boundary of every caller (compiled code
             // included): a C++ standard exception continues as
@@ -5623,8 +5616,17 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                 // The key list spells Python names; each is stored under its key.
                 const proto::ProtoString* keyS = key && key->isString(ctx)
                     ? PythonEnvironment::pythonAttributeKey(ctx, key->asString(ctx)) : nullptr;
-                if (!keyS || ns->hasOwnAttribute(ctx, keyS) != PROTO_TRUE) continue;
-                env->setItem(dict, key, ns->getAttribute(ctx, keyS), ctx);
+                if (!keyS) continue;
+                if (ns->hasOwnAttribute(ctx, keyS) == PROTO_TRUE) {
+                    env->setItem(dict, key, ns->getAttribute(ctx, keyS), ctx);
+                    continue;
+                }
+                // An item the namespace held before the body ran (a dict
+                // __prepare__ returned) is in its item storage only.
+                const proto::ProtoObject* data = ns->getAttribute(ctx, env->getDataString());
+                const proto::ProtoSparseList* dl = data ? data->asSparseList(ctx) : nullptr;
+                const proto::ProtoObject* item = dl ? PythonEnvironment::dictDataGet(ctx, dl, key) : nullptr;
+                if (item) env->setItem(dict, key, item, ctx);
             }
             nsArg = dict;
         }
@@ -10149,7 +10151,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 if (proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoObject* globalsObj = PythonEnvironment::getCurrentGlobals();
                     if (!globalsObj) globalsObj = frame;
-                    const proto::ProtoObject* newGlobals = globalsObj->setAttribute(ctx, nameObj->asString(ctx), val);
+                    const proto::ProtoObject* newGlobals = globalsObj->setAttribute(ctx, nameObj->asString(ctx), val);  // raw-key: compiler-produced name
                     PythonEnvironment::setCurrentGlobals(newGlobals);
                     if (frame) {
                     const proto::ProtoString* fg = env ? env->getFGlobalsString() : protoPython::PythonEnvironment::getInternalString(ctx, "f_globals");

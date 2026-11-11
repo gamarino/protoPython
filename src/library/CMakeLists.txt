@@ -48,6 +48,7 @@ add_library(protoPython SHARED
     WarningsModule.cpp
     OpcodeModule.cpp
     CodecsNative.cpp
+    NumberFormat.cpp
     StringModule.cpp
     BinasciiModule.cpp
     HashcoreModule.cpp

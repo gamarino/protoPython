@@ -930,10 +930,12 @@ BA_METHOD(ba_buffer) {
 
 BA_METHOD(ba_release_buffer) {
     BA_RECEIVER("__release_buffer__")
-    if (argc(ctx, args, shift) == 1 && isMemoryview(ctx, arg(ctx, args, shift, 0))) {
-        PythonEnvironment* env = envOf(ctx);
-        if (env && !env->callMethod(arg(ctx, args, shift, 0), "release", {})) return nullptr;
+    if (argc(ctx, args, shift) != 1) {
+        if (PythonEnvironment* env = envOf(ctx))
+            env->raiseTypeError(ctx, "__release_buffer__() takes exactly one argument");
+        return nullptr;
     }
+    if (!memoryviewReleaseBuffer(ctx, ba, arg(ctx, args, shift, 0))) return nullptr;
     return none();
 }
 
