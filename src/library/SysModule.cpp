@@ -1075,8 +1075,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_framework"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
 #endif
     
-    // sys.byteorder
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    // sys.byteorder. MSVC defines neither macro; an undefined pair would
+    // compare equal (0 == 0) and report "big" on little-endian Windows.
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     const char* bo = "big";
 #else
     const char* bo = "little";

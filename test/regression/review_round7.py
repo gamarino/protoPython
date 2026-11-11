@@ -296,6 +296,8 @@ assert not hasattr(math, 'r7_probe')
 '''
 
 SECTIONS['small_items'] = r'''
+import struct, sys
+assert sys.byteorder == ('little' if struct.pack('=H', 1) == b'\x01\x00' else 'big'), sys.byteorder
 import os, re
 # bytes.partition returns the separator object it was given.
 sep = bytearray(b',')
