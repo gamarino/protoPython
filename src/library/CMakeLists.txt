@@ -47,6 +47,7 @@ add_library(protoPython SHARED
     ImpModule.cpp
     WarningsModule.cpp
     OpcodeModule.cpp
+    CodecsNative.cpp
     StringModule.cpp
     BinasciiModule.cpp
     HashcoreModule.cpp

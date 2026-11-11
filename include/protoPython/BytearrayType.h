@@ -27,9 +27,13 @@ const proto::ProtoObject* makeBytearrayType(proto::ProtoContext* ctx, const prot
  * one version of the content: the export word and the bytes travel together.
  * All return false when `ba` is not a bytearray (or after raising).
  */
-bool bytearrayWatch(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long& epoch);
+bool bytearrayWatch(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long& epoch,
+                    size_t* sizeOut = nullptr);
 bool bytearrayHold(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch, int delta);
 bool bytearrayViewRead(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch, std::string& out);
+/** The bytes [from, to) of one version (clipped to its size), in O(to - from). */
+bool bytearrayViewReadRange(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch,
+                            size_t from, size_t to, std::string& out);
 bool bytearrayViewWrite(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch,
                         const std::vector<std::pair<size_t, std::string>>& pieces);
 /** Raises BufferError with `msg` (never returns). */

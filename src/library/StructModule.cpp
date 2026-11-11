@@ -2,6 +2,7 @@
 #include "protoPython/StructModule.h"
 #include <cstring>
 #include <cstdint>
+#include <climits>
 #include <vector>
 #include <string>
 
@@ -77,6 +78,12 @@ static bool parse_format(proto::ProtoContext* ctx, const std::string& fmt,
         char c0 = fmt[0];
         if (c0 == '<') { byte_order = '<'; i = 1; }
         else if (c0 == '>' || c0 == '!') { byte_order = '>'; i = 1; }
+        // Native ('@', '=') is little-endian: protoPython's targets
+        // (x86-64, AArch64 Linux/macOS/Windows) are all little-endian. A
+        // big-endian port must take this from the host, since the
+        // sys.byteorder == struct.pack('=H', 1) check cannot detect it.
+        // '@' also ignores native alignment and sizes (documented in
+        // docs/CPYTHON_CONFORMANCE.md).
         else if (c0 == '@' || c0 == '=') { byte_order = '<'; i = 1; }
     }
     int pending_count = 0;
@@ -393,6 +400,9 @@ static const proto::ProtoObject* sign_extend(proto::ProtoContext* ctx,
         }
         return ctx->fromInteger(static_cast<long long>(v));
     }
+    // Unsigned: a 64-bit value above LLONG_MAX is a large int, never a
+    // negative one.
+    if (v > static_cast<uint64_t>(LLONG_MAX)) return ctx->fromString(std::to_string(v).c_str(), 10);
     return ctx->fromInteger(static_cast<long long>(v));
 }
 

@@ -266,6 +266,9 @@ public:
     static const proto::ProtoString* pythonAttributeKey(proto::ProtoContext* ctx, const std::string& name) {
         return isInternalKeySpelling(name) ? getInternedString(ctx, "\x01" + name) : getInternedString(ctx, name);
     }
+    /** The name an attribute key spells for a message: the Python name of
+     *  an escaped key, the key's own text otherwise. */
+    static std::string attributeKeySpelling(proto::ProtoContext* ctx, const proto::ProtoString* key);
     /** The Python name of an attribute key, or nullptr for an internal key. */
     static const proto::ProtoString* pythonAttributeName(proto::ProtoContext* ctx, const proto::ProtoString* key);
 
@@ -1168,9 +1171,6 @@ public:
     /** Internal keys of the bytes-like types and of eval/exec frames,
      *  interned once (PythonEnvironment::getInternalString). */
     const proto::ProtoString* getBytearrayKey() const { return bytearrayKey_; }
-    const proto::ProtoString* getMvDataKey() const { return mvDataKey_; }
-    const proto::ProtoString* getMvStartKey() const { return mvStartKey_; }
-    const proto::ProtoString* getMvStopKey() const { return mvStopKey_; }
     const proto::ProtoString* getLocalsMappingKey() const { return localsMappingKey_; }
     const proto::ProtoString* getKeysString() const { return keysString; }
     const proto::ProtoString* getSlotsString() const { return slotsString; }
@@ -2480,9 +2480,6 @@ private:
     const proto::ProtoString* keysString{nullptr};
     const proto::ProtoString* slotsString{nullptr};
     const proto::ProtoString* bytearrayKey_{nullptr};
-    const proto::ProtoString* mvDataKey_{nullptr};
-    const proto::ProtoString* mvStartKey_{nullptr};
-    const proto::ProtoString* mvStopKey_{nullptr};
     const proto::ProtoString* localsMappingKey_{nullptr};
     const proto::ProtoString* isSuperProxyString{nullptr};
     const proto::ProtoString* pyGetAttrHandlerString_{nullptr};
@@ -2552,7 +2549,23 @@ public:
         // getType() / repr() so they match CPython.
         enum class Kind { METHOD, WRAPPER };
         Kind kind{Kind::METHOD};
+        // A classmethod or staticmethod in CPython (__new__, fromkeys,
+        // from_bytes, ...): its receiver is not the first argument.
+        bool classLevel{false};
+        // Every built-in type that binds the function (set and frozenset
+        // share theirs); an unbound call accepts an instance of any of them.
+        std::vector<const proto::ProtoObject*> owners;
     };
+    /**
+     * The method_descriptor call step: `T.m(x, *a)` reaches a native method
+     * with no receiver. When @p fn is a built-in type's instance method,
+     * @p self becomes the first argument, checked to be an instance of the
+     * owning type as CPython checks it ("descriptor 'm' for 'T' objects
+     * doesn't apply to a 'X' object"), and @p args loses it. Returns false
+     * after raising TypeError; true otherwise (also when nothing applies).
+     */
+    bool bindUnboundDescriptorCall(proto::ProtoContext* ctx, proto::ProtoMethod fn,
+                                   const proto::ProtoObject*& self, const proto::ProtoList*& args);
 private:
     std::unordered_map<const void*, NativeMethodInfo> nativeMethodNames_;
 public:

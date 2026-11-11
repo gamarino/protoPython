@@ -409,7 +409,7 @@ static const proto::ProtoObject* py_import(
                 if (itemName == "*") continue;
                 // Only try to resolve as a submodule if the parent module is a package (has __path__)
                 // and the attribute is not already present.
-                if (leaf->hasAttribute(context, itemObj->asString(context)) == PROTO_FALSE) {
+                if (leaf->hasAttribute(context, PythonEnvironment::pythonAttributeKey(context, itemObj->asString(context))) == PROTO_FALSE) {
                     if (protoPython::diagImportEnabled()) {
                         fprintf(stderr, "DEBUG IMPORT: attr '%s' NOT FOUND in module '%s'\n", itemName.c_str(), moduleName.c_str());
                         const proto::ProtoSparseList* attrs = leaf->getAttributes(context);
@@ -1362,7 +1362,7 @@ static const proto::ProtoObject* py_contains(
 
     // FLAT approach fallback: if not iterable via __contains__, check as attribute if item is string
     if (item->isString(context)) {
-        return container->hasAttribute(context, item->asString(context)) ? PROTO_TRUE : PROTO_FALSE;
+        return container->hasAttribute(context, PythonEnvironment::pythonAttributeKey(context, item->asString(context))) ? PROTO_TRUE : PROTO_FALSE;
     }
 
     return PROTO_FALSE;
@@ -2037,6 +2037,10 @@ static std::string py_format_float_spec(double val, const std::string& spec) {
     return out;
 }
 
+std::string formatFloatSpec(double val, const std::string& spec) {
+    return py_format_float_spec(val, spec);
+}
+
 static const proto::ProtoObject* py_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -2051,12 +2055,9 @@ static const proto::ProtoObject* py_format(
     {
         PythonEnvironment* envU = PythonEnvironment::fromContext(context);
         if (envU && obj && !obj->isInteger(context) && !obj->isDouble(context)) {
-            // bool singletons: route through the integer fast path so
-            // format(True, 'd') == '1' rather than crashing on asLong.
-            if (obj == PROTO_TRUE) {
-                obj = context->fromLong(1);
-            } else if (obj == PROTO_FALSE) {
-                obj = context->fromLong(0);
+            // bool singletons keep their type: bool.__format__ (int's)
+            // spells them True / False for an empty spec.
+            if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
             } else {
                 const proto::ProtoObject* data = obj->getAttribute(context, envU->getDataString());
                 if (data && (data->isInteger(context) || data->isDouble(context))) {
@@ -2099,11 +2100,7 @@ static const proto::ProtoObject* py_format(
     if (obj->isInteger(context)) {
         // Empty spec / no spec → bare decimal. Otherwise route through
         // __format__ on int (already implemented as py_int_format).
-        if (spec.empty()) {
-            char buf[32];
-            std::snprintf(buf, sizeof(buf), "%lld", (long long)obj->asLong(context));
-            return PythonEnvironment::getInternedString(context, buf)->asObject(context);
-        }
+        if (spec.empty()) return obj->asIntegerString(context, 10)->asObject(context);
         // Fall through to dunder dispatch below.
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -4238,6 +4235,16 @@ static const proto::ProtoObject* py_super_getattr(
     }
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     if (!nameObj->isString(context)) return PROTO_NONE;
+    // The argument is an attribute key (the proxy's handler receives the
+    // key the attribute protocol looks up; Python-level callers such as
+    // super.__getattribute__ escape the name first). Messages spell the
+    // Python name.
+    const proto::ProtoString* nameKey = nameObj->asString(context);
+    std::string pyName;
+    {
+        const proto::ProtoString* py = PythonEnvironment::pythonAttributeName(context, nameKey);
+        (py ? py : nameKey)->toUTF8String(context, pyName);
+    }
 
     // CPython's super_getattro skips the MRO magic for `__class__`:
     // `super(C,c).__class__` is `super` (or the user subclass), not the
@@ -4245,9 +4252,7 @@ static const proto::ProtoObject* py_super_getattr(
     // access via __py_getattr_handler__, return the proxy's real type
     // here.  Uses raw getType (no handler re-entry).
     {
-        std::string nm;
-        nameObj->asString(context)->toUTF8String(context, nm);
-        if (nm == "__class__") {
+        if (nameKey == PythonEnvironment::getInternedString(context, "__class__")) {
             PythonEnvironment* cenv = PythonEnvironment::fromContext(context);
             return cenv ? cenv->getType(context, self) : self->getFirstParent(context);
         }
@@ -4264,7 +4269,7 @@ static const proto::ProtoObject* py_super_getattr(
     // the bound super.__get__ descriptor method instead of MRO-walking
     // C's bases (which would fail).  A method is bound to the proxy.
     if (!obj || obj == PROTO_NONE) {
-        const proto::ProtoObject* raw = self->getAttribute(context, nameObj->asString(context));
+        const proto::ProtoObject* raw = self->getAttribute(context, nameKey);
         if (raw && raw != PROTO_NONE) {
             if (raw->isMethod(context)) {
                 return context->fromMethod(const_cast<proto::ProtoObject*>(self), raw->asMethod(context));
@@ -4273,8 +4278,7 @@ static const proto::ProtoObject* py_super_getattr(
         }
         PythonEnvironment* uenv = PythonEnvironment::fromContext(context);
         if (uenv) {
-            std::string nm; nameObj->asString(context)->toUTF8String(context, nm);
-            uenv->raiseAttributeError(context, self, nm);
+            uenv->raiseAttributeError(context, self, pyName);
         }
         return nullptr;
     }
@@ -4376,7 +4380,7 @@ static const proto::ProtoObject* py_super_getattr(
             fprintf(stderr, "DEBUG_SUPER_TARGET: target=%p (%s)\n", (void*)target, env ? env->reprObject(context, target).c_str() : "?");
         }
 
-        const proto::ProtoObject* val = target->proto::ProtoObject::getAttribute(context, nameObj->asString(context));
+        const proto::ProtoObject* val = target->proto::ProtoObject::getAttribute(context, nameKey);
         if (!val || val == PROTO_NONE) continue;
 
         bool isPythonClass = (target->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "\001__is_python_class__")) != PROTO_NONE);
@@ -4411,7 +4415,7 @@ static const proto::ProtoObject* py_super_getattr(
         // super().family, AddressFamily)` and has been broken since the
         // initial protoPython bring-up of socket.
         bool isOwnedDescriptor = false;
-        if (target->proto::ProtoObject::hasOwnAttribute(context, nameObj->asString(context)) == PROTO_TRUE) {
+        if (target->proto::ProtoObject::hasOwnAttribute(context, nameKey) == PROTO_TRUE) {
             const proto::ProtoString* getStrCheck = env ? env->getGetDunderString() : PythonEnvironment::getInternedString(context, "__get__");
             const proto::ProtoObject* dg = env ? env->getAttribute(context, val, getStrCheck, false) : val->getAttribute(context, getStrCheck);
             if (dg && dg != PROTO_NONE && dg->asMethod(context)) isOwnedDescriptor = true;
@@ -4422,13 +4426,13 @@ static const proto::ProtoObject* py_super_getattr(
             legit = true;
         } else if (isObject) {
             legit = true;
-        } else if (isNativeCallable && target->proto::ProtoObject::hasOwnAttribute(context, nameObj->asString(context)) == PROTO_TRUE) {
+        } else if (isNativeCallable && target->proto::ProtoObject::hasOwnAttribute(context, nameKey) == PROTO_TRUE) {
             // Native C++ method owned by a class in the MRO is always legit (e.g. object.__init__)
             legit = true;
         } else if (isOwnedDescriptor) {
             // @property / classmethod / staticmethod / user descriptor in target.
             legit = true;
-        } else if (target->proto::ProtoObject::hasOwnAttribute(context, nameObj->asString(context)) == PROTO_TRUE) {
+        } else if (target->proto::ProtoObject::hasOwnAttribute(context, nameKey) == PROTO_TRUE) {
             // Plain data attribute owned by target — covers `class B: x = 1`
             // accessed via super().x. The earlier code only honoured non-
             // python-class targets here, so super().class_attribute was
@@ -4499,9 +4503,7 @@ static const proto::ProtoObject* py_super_getattr(
     }
     
     if (env) {
-        std::string n;
-        nameObj->asString(context)->toUTF8String(context, n);
-        env->raiseAttributeError(context, type, n);
+        env->raiseAttributeError(context, type, pyName);
     }
     return nullptr;
 }
@@ -4541,11 +4543,11 @@ static const proto::ProtoObject* py_super_setattr(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
         const proto::ProtoObject* result = env->setAttribute(context, obj,
-            nameObj->asString(context), valueObj);
+            PythonEnvironment::pythonAttributeKey(context, nameObj->asString(context)), valueObj);
         (void)result;
         return PROTO_NONE;
     }
-    return obj->setAttribute(context, nameObj->asString(context), valueObj);
+    return obj->setAttribute(context, PythonEnvironment::pythonAttributeKey(context, nameObj->asString(context)), valueObj);
 }
 
 static const proto::ProtoObject* py_super_repr(
@@ -4620,11 +4622,12 @@ static proto::ProtoObject* make_super_proxy(proto::ProtoContext* context,
     // the proxy's obj, for the life of the space.  The receiver arrives as
     // an argument instead: the OBJ-level `__py_getattr_handler__` dispatch
     // (PythonEnvironment::getAttribute) passes the proxy explicitly, and it
-    // intercepts every attribute read, `__getattr__` and `__setattr__`
-    // included, before anything could reach these cells through
+    // intercepts every attribute read, `__setattr__` included, before
+    // anything could reach these cells through
     // asMethodSelf.  py_super_getattr / py_super_setattr reject a call
     // without a receiver rather than reading through a null one.
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__getattr__"), context->fromMethod(nullptr, py_super_getattr));
+    // No own __getattr__: the handler answers every read, and a miss is an
+    // AttributeError (getattr(super(), name, default) returns the default).
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__setattr__"), context->fromMethod(nullptr, py_super_setattr));
     // Fast-path OBJ-level dispatch: hasOwnAttribute(__py_getattr_handler__)
     // makes every getAttribute on the proxy route through py_super_getattr.
@@ -4648,7 +4651,9 @@ static const proto::ProtoObject* py_super_getattribute(
     // class (args (proxy, name)), as the attribute protocol does.
     const proto::ProtoObject* proxy = n >= 2 ? positionalParameters->getAt(context, 0) : self;
     const proto::ProtoObject* name = positionalParameters->getAt(context, static_cast<int>(n - 1));
-    const proto::ProtoObject* only[1] = {name};
+    if (!name || !name->isString(context)) return PROTO_NONE;
+    const proto::ProtoObject* only[1] = {
+        PythonEnvironment::pythonAttributeKey(context, name->asString(context))->asObject(context)};
     return py_super_getattr(context, proxy, parentLink,
                             protoPython::argsView(proto::ProtoArguments(only, 1)), nullptr);
 }
@@ -7053,6 +7058,8 @@ const proto::ProtoObject* py_type(
                     { isFinal = true; baseName = "NoneType"; }
                 else if (base == env->getBoolPrototype())
                     { isFinal = true; baseName = "bool"; }
+                else if (env->getMemoryviewPrototype() && base == env->getMemoryviewPrototype())
+                    { isFinal = true; baseName = "memoryview"; }
                 else if (env->getNotImplementedPrototype()
                          && base == env->getType(context, env->getNotImplementedPrototype()))
                     { isFinal = true; baseName = "NotImplementedType"; }
@@ -7927,6 +7934,19 @@ const proto::ProtoObject* py_type(
                 return "_" + trimmed.substr(start) + raw;
             };
             auto installSlot = [&](const std::string& slotNameRaw) {
+                // CPython: a slot name is an identifier (non-ASCII letters
+                // are left to the tokenizer's rules; control characters
+                // and punctuation never qualify).
+                bool ident = !slotNameRaw.empty()
+                    && !(slotNameRaw[0] >= '0' && slotNameRaw[0] <= '9');
+                for (unsigned char ch : slotNameRaw) {
+                    if (!(ch >= 0x80 || ch == '_' || (ch >= 'a' && ch <= 'z')
+                          || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))) { ident = false; break; }
+                }
+                if (!ident) {
+                    env->raiseTypeError(context, "__slots__ must be identifiers");
+                    return;
+                }
                 if (slotNameRaw == "__dict__" || slotNameRaw == "__weakref__") return;
                 std::string slotName = mangleSlot(slotNameRaw);
                 proto::ProtoObject* descr = const_cast<proto::ProtoObject*>(memberProto->newChild(context, true));
@@ -7980,7 +8000,9 @@ const proto::ProtoObject* py_type(
             for (size_t i = 0; i < tKeysList->getSize(context); ++i) {
                 const proto::ProtoObject* keyObj = tKeysList->getAt(context, static_cast<int>(i));
                 if (keyObj && keyObj->isString(context)) {
-                    const proto::ProtoObject* val = targetClass->getAttribute(context, keyObj->asString(context));
+                    // The key list spells Python names; read each under its key.
+                    const proto::ProtoObject* val = targetClass->getAttribute(context,
+                        PythonEnvironment::pythonAttributeKey(context, keyObj->asString(context)));
                     if (val && val != PROTO_NONE) {
                         PythonEnvironment* pe = PythonEnvironment::fromContext(context);
                         const proto::ProtoObject* valType = pe ? pe->getType(context, val) : nullptr;

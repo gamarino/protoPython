@@ -558,9 +558,10 @@ static void syncModuleIdentity(proto::ProtoContext* ctx, PythonEnvironment* env,
     if (sys) {
         const proto::ProtoObject* modules = env->getAttribute(ctx, sys, env->getModulesS());
         if (modules && modules != PROTO_NONE) {
-            const proto::ProtoString* modNameS = nameAttr->asString(ctx);
             std::string moduleName;
-            modNameS->toUTF8String(ctx, moduleName);
+            nameAttr->asString(ctx)->toUTF8String(ctx, moduleName);
+            // A module name is Python data: the attribute mirror uses its key.
+            const proto::ProtoString* modNameS = PythonEnvironment::pythonAttributeKey(ctx, nameAttr->asString(ctx));
 
             // 1. Update as attribute (internal lookup fallback)
             if (modules->getAttribute(ctx, modNameS) == oldMod) {
@@ -3064,6 +3065,9 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         PythonEnvironment::TransientPin pinArgs(env, args ? args->asObject(ctx) : nullptr);
         const proto::ProtoMethod method = callable->asMethod(ctx);
         const proto::ProtoObject* self = callable->asMethodSelf(ctx);
+        // `T.m(x, *a)`: a built-in type's method called through the type
+        // takes its receiver from the arguments (method_descriptor call).
+        if (!self && env && !env->bindUnboundDescriptorCall(ctx, method, self, args)) return nullptr;
         const proto::ProtoObject* result = nullptr;
         try {
             result = method(
@@ -5616,7 +5620,9 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
             PythonEnvironment::TransientPin pinDict(env, dict);
             for (proto::proto_ulong k = 0; k < nameList->getSize(ctx); ++k) {
                 const proto::ProtoObject* key = nameList->getAt(ctx, static_cast<int>(k));
-                const proto::ProtoString* keyS = key && key->isString(ctx) ? key->asString(ctx) : nullptr;
+                // The key list spells Python names; each is stored under its key.
+                const proto::ProtoString* keyS = key && key->isString(ctx)
+                    ? PythonEnvironment::pythonAttributeKey(ctx, key->asString(ctx)) : nullptr;
                 if (!keyS || ns->hasOwnAttribute(ctx, keyS) != PROTO_TRUE) continue;
                 env->setItem(dict, key, ns->getAttribute(ctx, keyS), ctx);
             }
@@ -5766,7 +5772,7 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                     const proto::ProtoObject* k = tcKL->getAt(ctx, static_cast<int>(ki));
                     if (!k || !k->isString(ctx)) continue;
                     const proto::ProtoObject* v =
-                        targetClass->getAttribute(ctx, k->asString(ctx));
+                        targetClass->getAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, k->asString(ctx)));
                     if (v == ns) { nsReachableFromTarget = true; break; }
                 }
             }
@@ -5839,7 +5845,8 @@ const proto::ProtoObject* PythonEnvironment::buildClass(proto::ProtoContext* ctx
                         const proto::ProtoObject* bn = bl ? bl->getAt(ctx, static_cast<int>(bi)) : bt->getAt(ctx, static_cast<int>(bi));
                         if (!bn || !bn->isString(ctx)) continue;
                         // Check if this class has a concrete override.
-                        const proto::ProtoObject* override_ = targetClass->getOwnAttributeDirect(ctx, bn->asString(ctx));
+                        const proto::ProtoObject* override_ = targetClass->getOwnAttributeDirect(ctx,
+                            PythonEnvironment::pythonAttributeKey(ctx, bn->asString(ctx)));
                         bool overrides = override_ && override_ != PROTO_NONE;
                         if (overrides) {
                             const proto::ProtoObject* isAbs = override_->getAttribute(ctx, abstractS);
@@ -7386,7 +7393,10 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
             // names.  This helper mirrors the STORE_NAME body.
             const proto::ProtoString* keysNameS =
                 PythonEnvironment::getInternedString(ctx, "\001__keys__");
-            auto recordKeyInFrame = [&](const proto::ProtoString* nameS) {
+            auto recordKeyInFrame = [&](const proto::ProtoString* keyS) {
+                // The key list spells names as Python does.
+                const proto::ProtoString* nameS = PythonEnvironment::pythonAttributeName(ctx, keyS);
+                if (!nameS) return;
                 const proto::ProtoObject* keysObj =
                     (frame->hasOwnAttribute(ctx, keysNameS) == PROTO_TRUE)
                         ? frame->getOwnAttributeDirect(ctx, keysNameS) : nullptr;
@@ -7449,9 +7459,12 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                     it = it->advance(ctx);
                                     continue;
                                 }
-                                const proto::ProtoObject* val = mod->getAttribute(ctx, nameObj->asString(ctx));
+                                // The key list holds Python names: read and bind
+                                // each under the key it maps to.
+                                const proto::ProtoString* nm =
+                                    PythonEnvironment::pythonAttributeKey(ctx, nameObj->asString(ctx));
+                                const proto::ProtoObject* val = mod->getAttribute(ctx, nm);
                                 if (val) {
-                                    const proto::ProtoString* nm = nameObj->asString(ctx);
                                     bindImported(nm, val);
                                 }
                             }
@@ -7470,7 +7483,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                                     if (s) {
                                         std::string n;
                                         s->toUTF8String(ctx, n);
-                                        if (!n.empty() && n[0] != '_' && !PythonEnvironment::isInternalKeySpelling(n)) {
+                                        if (!n.empty() && n[0] != '_' && PythonEnvironment::pythonAttributeName(ctx, s)) {
                                             const proto::ProtoObject* val = mod->getAttribute(ctx, s);
                                             if (val) {
                                                 bindImported(s, val);
@@ -9366,7 +9379,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     // This is ideal for Namespace objects (classes, modules)
                     if (diag_local) {
                     }
-                    container->setAttribute(ctx, key->asString(ctx), value);
+                    container->setAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, key->asString(ctx)), value);
                 } else {
                     // Dictionary-like storage in __data__ for non-string keys or explicit collections
                     const proto::ProtoString* dataS = protoPython::PythonEnvironment::getInternalString(ctx, "\001__data__");

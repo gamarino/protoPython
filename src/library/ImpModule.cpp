@@ -102,7 +102,7 @@ static const proto::ProtoObject* imp_create_builtin(
                 const proto::ProtoSparseList* entries = (data && data != PROTO_NONE) ? data->asSparseList(ctx) : nullptr;
                 const proto::ProtoObject* existing = entries
                     ? PythonEnvironment::dictDataGet(ctx, entries, nameStr->asObject(ctx))
-                    : sysMods->getAttribute(ctx, nameStr);
+                    : sysMods->getAttribute(ctx, PythonEnvironment::pythonAttributeKey(ctx, nameStr));
                 if (existing && existing != PROTO_NONE) {
                     return existing;
                 }

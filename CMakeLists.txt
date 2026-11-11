@@ -675,6 +675,26 @@ set_tests_properties(protopy_review_round7_gc PROPERTIES
     ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
     PASS_REGULAR_EXPRESSION "review_round7: ok"
     LABELS "regression_gate")
+# Review round 8 of 1.2.2: internal keys through __dict__.update, star
+# import, super and __set_name__; int formatting at any size; unsigned 64-bit
+# struct and memoryview items; built-in methods called through their type;
+# failing imports; memoryview exports and formats; native codecs.
+add_test(NAME protopy_review_round8
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/review_round8.py)
+set_tests_properties(protopy_review_round8 PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    PASS_REGULAR_EXPRESSION "review_round8: ok"
+    LABELS "regression_gate")
+# The same under GC pressure.
+add_test(NAME protopy_review_round8_gc
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/review_round8.py)
+set_tests_properties(protopy_review_round8_gc PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 600
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "review_round8: ok"
+    LABELS "regression_gate")
 # A mutating __eq__ makes a dict or set lookup compare each stored key once.
 add_test(NAME protopy_hash_restart_memo
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/hash_restart_memo.py)

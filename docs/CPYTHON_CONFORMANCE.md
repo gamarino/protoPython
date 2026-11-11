@@ -156,6 +156,17 @@ defect and adds a `test/regression/*.py` test registered in
   after a resize; it never reads or writes shifted offsets. CPython raises at
   the resize. `ba += ba` and `ba += memoryview(ba)` raise `BufferError` as
   CPython 3.12 and 3.14 do (`extend(ba)` and `ba[0:0] = ba` work on both).
+  `with memoryview(ba)` makes the view and then holds it: a resize by another
+  thread between the two raises `BufferError` (the view is then stale) at the
+  `with`, where CPython's view is an export from its creation. A view made by
+  `__buffer__` holds its export from the start. A `with` block inside a
+  generator that is never resumed holds its export until the program ends
+  (no finalisation runs for it). A view of an `array.array` is a read-only
+  snapshot of the array when the view was made.
+- **struct native mode:** `'@'` uses the standard sizes and no alignment
+  (`calcsize('@bi')` is 5, CPython's is 8; `'l'` is 4 bytes) and native byte
+  order is little-endian; `n`, `N`, `P` and `e` are not implemented in
+  `struct` (memoryview supports them).
 - **Comparisons:** `object.__ne__` runs a full comparison, so
   `[].__ne__(())` is True where CPython returns NotImplemented.
 - **Error messages and reprs:** `sys.x` raises "'object' object has no

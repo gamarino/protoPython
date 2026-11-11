@@ -27,6 +27,7 @@ __all__ = [
 ]
 
 import sys as _sys
+import _codecs_native
 
 _search_path = []
 _search_cache = {}
@@ -479,40 +480,41 @@ def _native_order():
 
 
 def _utf_encode(s, errors, size, order, name):
-    # order: -1 little, 1 big. Surrogates are errors (surrogatepass passes them).
+    # order: -1 little, 1 big. Surrogates are errors (surrogatepass passes
+    # them), reported one character at a time as CPython's encoder does.
+    # The clean runs between them are encoded natively.
     endian = 'little' if order < 0 else 'big'
-    out = bytearray()
+    little = order < 0
+    s = str(s)
+    out = []
     handler = None
     i = 0
     n = len(s)
     while i < n:
-        cp = ord(s[i])
-        if 0xD800 <= cp <= 0xDFFF:
-            j = i + 1
-            while j < n and 0xD800 <= ord(s[j]) <= 0xDFFF:
-                j += 1
-            if handler is None:
-                handler = lookup_error(_errors(errors))
-            rep, pos = handler(UnicodeEncodeError(name, s, i, j, 'surrogates not allowed'))
-            if isinstance(rep, str):
-                for c in rep:
-                    if 0xD800 <= ord(c) <= 0xDFFF:
-                        raise UnicodeEncodeError(name, s, i, j, 'surrogates not allowed')
-                    out += _utf_unit_bytes(ord(c), size, endian)
-            else:
-                rep = bytes(rep)
-                if len(rep) % size:
+        chunk, i = _codecs_native.utf_encode(s, i, size, little)
+        out.append(chunk)
+        if i >= n:
+            break
+        j = i + 1
+        if handler is None:
+            handler = lookup_error(_errors(errors))
+        rep, pos = handler(UnicodeEncodeError(name, s, i, j, 'surrogates not allowed'))
+        if isinstance(rep, str):
+            for c in rep:
+                if 0xD800 <= ord(c) <= 0xDFFF:
                     raise UnicodeEncodeError(name, s, i, j, 'surrogates not allowed')
-                out += rep
-            if pos < 0:
-                pos += n
-            if not 0 <= pos <= n:
-                raise IndexError('position %d from error handler out of bounds' % pos)
-            i = pos
-            continue
-        out += _utf_unit_bytes(cp, size, endian)
-        i += 1
-    return bytes(out)
+                out.append(_utf_unit_bytes(ord(c), size, endian))
+        else:
+            rep = bytes(rep)
+            if len(rep) % size:
+                raise UnicodeEncodeError(name, s, i, j, 'surrogates not allowed')
+            out.append(rep)
+        if pos < 0:
+            pos += n
+        if not 0 <= pos <= n:
+            raise IndexError('position %d from error handler out of bounds' % pos)
+        i = pos
+    return b''.join(out)
 
 
 def _utf_unit_bytes(cp, size, endian):
@@ -556,7 +558,14 @@ def _utf16_decode(data, errors, order, final, name, i=0):
             raise IndexError('position %d from error handler out of bounds' % pos)
         return pos
 
+    little = order < 0
     while i < n:
+        # Valid units natively; the loop below only sees an error or an
+        # incomplete unit at the end.
+        chunk, i = _codecs_native.utf16_decode(data, i, little)
+        out.append(chunk)
+        if i >= n:
+            break
         if n - i < 2:
             if not final:
                 break
@@ -602,7 +611,12 @@ def _utf32_decode(data, errors, order, final, name, i=0):
             raise IndexError('position %d from error handler out of bounds' % pos)
         return pos
 
+    little = order < 0
     while i < n:
+        chunk, i = _codecs_native.utf32_decode(data, i, little)
+        out.append(chunk)
+        if i >= n:
+            break
         if n - i < 4:
             if not final:
                 break
@@ -712,68 +726,21 @@ def utf_32_ex_decode(data, errors=None, byteorder=0, final=False):
 
 _B64 = b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 _B64_VALUE = {c: i for i, c in enumerate(_B64)}
-# CPython's utf7_category: 0 direct, 1 optional direct, 2 whitespace, 3 special.
-_UTF7_DIRECT = set(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'(),-./:?")
-_UTF7_OPTIONAL = set(b'!"#$%&*;<=>@[]^_`{|}')
-_UTF7_SPACE = set(b' \t\r\n')
-
-
-def _utf7_encode_direct(cp):
-    return 0 < cp < 128 and (cp in _UTF7_DIRECT or cp in _UTF7_OPTIONAL or cp in _UTF7_SPACE)
 
 
 def utf_7_encode(s, errors=None):
-    out = bytearray()
-    in_shift = False
-    bits = 0
-    buf = 0
-
-    def put(value):
-        nonlocal bits, buf
-        bits += 16
-        buf = (buf << 16) | value
-        while bits >= 6:
-            out.append(_B64[(buf >> (bits - 6)) & 0x3F])
-            bits -= 6
-        buf &= (1 << bits) - 1
-
-    for c in s:
-        cp = ord(c)
-        if in_shift:
-            if _utf7_encode_direct(cp):
-                if bits:
-                    out.append(_B64[(buf << (6 - bits)) & 0x3F])
-                    buf = 0
-                    bits = 0
-                in_shift = False
-                if cp in _B64_VALUE or cp == 0x2D:
-                    out.append(0x2D)
-                out.append(cp)
-                continue
-        else:
-            if cp == 0x2B:
-                out += b'+-'
-                continue
-            if _utf7_encode_direct(cp):
-                out.append(cp)
-                continue
-            out.append(0x2B)
-            in_shift = True
-        if cp >= 0x10000:
-            cp -= 0x10000
-            put(0xD800 | (cp >> 10))
-            put(0xDC00 | (cp & 0x3FF))
-        else:
-            put(cp)
-    if bits:
-        out.append(_B64[(buf << (6 - bits)) & 0x3F])
-    if in_shift:
-        out.append(0x2D)
-    return (bytes(out), len(s))
+    # UTF-7 encodes every code point (lone surrogates included), so the
+    # encoder never reports an error: it is native whole (CodecsNative.cpp).
+    return (_codecs_native.utf7_encode(str(s)), len(s))
 
 
 def utf_7_decode(data, errors=None, final=False):
     data = bytes(data)
+    # Well-formed input decodes natively; the loop below handles errors
+    # (through the handler protocol) and a shift sequence still open.
+    text = _codecs_native.utf7_decode(data)
+    if text is not None:
+        return (text, len(data))
     n = len(data)
     out = []
     handler = None
@@ -870,8 +837,17 @@ def utf_7_decode(data, errors=None, final=False):
     return (''.join(out), i)
 
 
+class _EncodingMap(dict):
+    """charmap_build's result: the inverse of a decoding table, as a dict
+    (as CPython's EncodingMap answers lookups), remembering the table so
+    charmap_encode converts natively."""
+    __slots__ = ('_table',)
+
+
 def charmap_build(decoding_table):
-    return {ord(c): i for i, c in enumerate(decoding_table)}
+    m = _EncodingMap({ord(c): i for i, c in enumerate(decoding_table)})
+    m._table = decoding_table if isinstance(decoding_table, str) and len(decoding_table) <= 256 else None
+    return m
 
 
 def charmap_decode(data, errors=None, mapping=None):
@@ -881,15 +857,22 @@ def charmap_decode(data, errors=None, mapping=None):
     handler = None
     out = []
     i = 0
-    while i < len(data):
+    n = len(data)
+    table = mapping if type(mapping) is str else None
+    while i < n:
+        if table is not None:
+            chunk, i = _codecs_native.charmap_decode(data, i, table)
+            out.append(chunk)
+            if i >= n:
+                break
         b = data[i]
         if isinstance(mapping, str):
-            c = mapping[b] if b < len(mapping) else '￾'
+            c = mapping[b] if b < len(mapping) else '\ufffe'
         else:
             c = mapping.get(b)
             if isinstance(c, int):
                 c = chr(c)
-        if c is None or c == '￾':
+        if c is None or c == '\ufffe':
             if handler is None:
                 handler = lookup_error(_errors(errors))
             rep, i = handler(UnicodeDecodeError('charmap', data, i, i + 1,
@@ -904,17 +887,45 @@ def charmap_decode(data, errors=None, mapping=None):
 def charmap_encode(s, errors=None, mapping=None):
     if mapping is None:
         return latin_1_encode(s, errors)
+    s = str(s)
     handler = None
     out = bytearray()
     i = 0
-    while i < len(s):
+    n = len(s)
+    table = getattr(mapping, '_table', None) if type(mapping) is _EncodingMap else None
+    while i < n:
+        if table is not None:
+            chunk, i = _codecs_native.charmap_encode(s, i, table)
+            out += chunk
+            if i >= n:
+                break
         b = mapping.get(ord(s[i]))
         if b is None:
+            # A run of unmappable characters is one error, as CPython's
+            # charmap encoder reports it.
+            j = i + 1
+            while j < n and mapping.get(ord(s[j])) is None:
+                j += 1
             if handler is None:
                 handler = lookup_error(_errors(errors))
-            rep, i = handler(UnicodeEncodeError('charmap', s, i, i + 1,
-                                                'character maps to <undefined>'))
-            out += rep.encode('ascii') if isinstance(rep, str) else rep
+            rep, pos = handler(UnicodeEncodeError('charmap', s, i, j,
+                                                  'character maps to <undefined>'))
+            if isinstance(rep, str):
+                for c in rep:
+                    rb = mapping.get(ord(c))
+                    if rb is None:
+                        raise UnicodeEncodeError('charmap', s, i, j, 'character maps to <undefined>')
+                    if isinstance(rb, int):
+                        out.append(rb)
+                    else:
+                        out += rb
+            else:
+                out += rep
+            if pos < 0:
+                pos += n
+            if not 0 <= pos <= n:
+                raise IndexError('position %d from error handler out of bounds' % pos)
+            i = pos
             continue
         if isinstance(b, int):
             out.append(b)

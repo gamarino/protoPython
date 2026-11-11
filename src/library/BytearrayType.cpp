@@ -917,11 +917,15 @@ BA_METHOD(ba_reduce) {
     return reduceWith(ctx, ba, 0);
 }
 
+// __buffer__(flags): a memoryview that holds an export until
+// __release_buffer__ (or its release()), as CPython's buffer protocol does.
 BA_METHOD(ba_buffer) {
     BA_RECEIVER("__buffer__")
     PythonEnvironment* env = envOf(ctx);
-    const PO* mv = env ? env->getBuiltins()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "memoryview")) : nullptr;
-    return mv ? env->callObject(mv, {ba}) : PROTO_NONE;
+    const PO* mvType = env ? env->getBuiltins()->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "memoryview")) : nullptr;
+    const PO* view = mvType ? env->callObject(mvType, {ba}) : nullptr;
+    if (!view || view == PROTO_NONE) return view;
+    return env->callMethod(view, "__enter__", {});
 }
 
 BA_METHOD(ba_release_buffer) {
@@ -1163,6 +1167,9 @@ const PO* ba_new_impl(proto::ProtoContext* ctx, const PO* self, const proto::Par
 
 // bytearray.__init__(self, source=None, encoding=None, errors=None)
 // replaces the content; withSignature<> moved keywords to their positions.
+// The receiver arrives as self: an unbound call bytearray.__init__(ba, ...)
+// is bound by the call path (PythonEnvironment::bindUnboundDescriptorCall),
+// so the signature counts no receiver among the arguments.
 const PO* ba_init_impl(proto::ProtoContext* ctx, const PO* self, const proto::ParentLink*,
                        const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
     unsigned shift = 0;
@@ -1175,7 +1182,7 @@ const PO* ba_init_impl(proto::ProtoContext* ctx, const PO* self, const proto::Pa
 }
 
 const BuiltinSignature kSigNew{"bytearray", 1, {{"source", BuiltinParam::None, 0}, {"encoding", BuiltinParam::None, 0}, {"errors", BuiltinParam::None, 0}}, {}, true};
-const BuiltinSignature kSigInit{"bytearray", 1, {{"source", BuiltinParam::None, 0}, {"encoding", BuiltinParam::None, 0}, {"errors", BuiltinParam::None, 0}}, {}};
+const BuiltinSignature kSigInit{"bytearray", 0, {{"source", BuiltinParam::None, 0}, {"encoding", BuiltinParam::None, 0}, {"errors", BuiltinParam::None, 0}}, {}};
 
 } // namespace
 
@@ -1262,7 +1269,8 @@ namespace {
 // Publishes a new export word computed from the current one, keeping the
 // content; `change` returns false after raising.
 template <class Change>
-bool publishHead(proto::ProtoContext* ctx, const PO* ba, Change change, long long* epochOut = nullptr) {
+bool publishHead(proto::ProtoContext* ctx, const PO* ba, Change change, long long* epochOut = nullptr,
+                 size_t* sizeOut = nullptr) {
     if (!stateOf(ctx, ba)) return false;
     const proto::ProtoString* name = storageName(ctx);
     for (;;) {
@@ -1273,6 +1281,9 @@ bool publishHead(proto::ProtoContext* ctx, const PO* ba, Change change, long lon
         long long next = word;
         if (!change(word, next)) return false;
         if (epochOut) *epochOut = next >> kEpochShift;
+        // The size of the version the word is published with: a view made
+        // from it agrees with its epoch, with no second read to race.
+        if (sizeOut) *sizeOut = storeSize(ctx, cur);
         if (next == word) return true;
         if (ba->setAttributeIfEqual(ctx, name, raw, cur->setAt(ctx, 0, ctx->fromInteger(next))->asObject(ctx))) return true;
     }
@@ -1284,8 +1295,8 @@ bool publishHead(proto::ProtoContext* ctx, const PO* ba, Change change, long lon
 
 } // namespace
 
-bool bytearrayWatch(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long& epoch) {
-    return publishHead(ctx, ba, [](long long w, long long& n) { n = w | kWatched; return true; }, &epoch);
+bool bytearrayWatch(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long& epoch, size_t* sizeOut) {
+    return publishHead(ctx, ba, [](long long w, long long& n) { n = w | kWatched; return true; }, &epoch, sizeOut);
 }
 
 bool bytearrayHold(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch, int delta) {
@@ -1307,6 +1318,16 @@ bool bytearrayViewRead(proto::ProtoContext* ctx, const proto::ProtoObject* ba, l
     if ((headWord(ctx, st) >> kEpochShift) != epoch) raiseStaleView(ctx);
     out.clear();
     storeRead(ctx, st, out);
+    return true;
+}
+
+bool bytearrayViewReadRange(proto::ProtoContext* ctx, const proto::ProtoObject* ba, long long epoch,
+                            size_t from, size_t to, std::string& out) {
+    const PL* st = stateOf(ctx, ba);
+    if (!st) return false;
+    if ((headWord(ctx, st) >> kEpochShift) != epoch) raiseStaleView(ctx);
+    out.clear();
+    storeRead(ctx, st, out, from, to);
     return true;
 }
 

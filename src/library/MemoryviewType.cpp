@@ -30,6 +30,7 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -102,6 +103,51 @@ bool parseFormat(const std::string& text, Format& f) {
 
 bool isByteFormat(char c) { return c == 'B' || c == 'b' || c == 'c'; }
 
+// IEEE 754 binary16 ('e'), as CPython's PyFloat_Pack2 / PyFloat_Unpack2:
+// round half to even; a finite value beyond the range is an overflow.
+bool packHalf(double x, uint16_t& out) {
+    const uint16_t sign = std::signbit(x) ? 0x8000 : 0;
+    if (std::isnan(x)) { out = sign | 0x7e00; return true; }
+    if (std::isinf(x)) { out = sign | 0x7c00; return true; }
+    double f = std::fabs(x);
+    if (f == 0.0) { out = sign; return true; }
+    int e = 0;
+    f = std::frexp(f, &e);   // f in [0.5, 1)
+    f *= 2.0;
+    e -= 1;                  // f in [1, 2)
+    if (e >= 16) return false;
+    if (e < -14) {
+        f = std::ldexp(f, 14 + e);
+        e = 0;
+    } else {
+        e += 15;
+        f -= 1.0;
+    }
+    f *= 1024.0;
+    unsigned bits = static_cast<unsigned>(f);
+    f -= bits;
+    if (f > 0.5 || (f == 0.5 && (bits & 1))) {
+        ++bits;
+        if (bits == 1024) {
+            bits = 0;
+            ++e;
+            if (e == 31) return false;
+        }
+    }
+    out = static_cast<uint16_t>(sign | (e << 10) | bits);
+    return true;
+}
+
+double unpackHalf(uint16_t h) {
+    const int e = (h >> 10) & 0x1f;
+    const unsigned m = h & 0x3ff;
+    double x;
+    if (e == 0x1f) x = m ? std::nan("") : INFINITY;
+    else if (e == 0) x = std::ldexp(static_cast<double>(m), -24);
+    else x = std::ldexp(static_cast<double>(m + 1024), e - 25);
+    return (h & 0x8000) ? -x : x;
+}
+
 const PO* bigUnsigned(proto::ProtoContext* ctx, unsigned long long v) {
     if (v <= static_cast<unsigned long long>(INT64_MAX >> 8)) return ctx->fromInteger(static_cast<long long>(v));
     PythonEnvironment* env = envOf(ctx);
@@ -132,6 +178,7 @@ const PO* decodeItem(proto::ProtoContext* ctx, const Format& f, const char* p) {
             PythonEnvironment* env = envOf(ctx);
             return env->callObject(env->getIntPrototype(), {PythonEnvironment::newStr(ctx, std::to_string(v))});
         }
+        case 'e': return ctx->fromDouble(unpackHalf(static_cast<uint16_t>(u(2))));
         case 'f': { float x; std::memcpy(&x, p, 4); return ctx->fromDouble(x); }
         case 'd': { double x; std::memcpy(&x, p, 8); return ctx->fromDouble(x); }
         default: raiseNotImpl(ctx, std::string("memoryview: format ") + f.code + " not supported");
@@ -153,25 +200,38 @@ std::string encodeItem(proto::ProtoContext* ctx, const Format& f, const PO* valu
         out[0] = (env && env->isTrue(value)) ? 1 : 0;
         return out;
     }
-    if (f.code == 'f' || f.code == 'd') {
+    if (f.code == 'f' || f.code == 'd' || f.code == 'e') {
         double x = 0;
         if (value && value->isDouble(ctx)) x = value->asDouble(ctx);
         else if (value && value->isInteger(ctx)) x = static_cast<double>(value->asLong(ctx));
         else raiseType(ctx, "memoryview: invalid type for format '" + fmtName + "'");
-        if (f.code == 'f') { const float y = static_cast<float>(x); std::memcpy(&out[0], &y, 4); }
+        if (f.code == 'e') {
+            uint16_t h = 0;
+            if (!packHalf(x, h)) raiseValue(ctx, "memoryview: invalid value for format 'e'");
+            std::memcpy(&out[0], &h, 2);
+        } else if (f.code == 'f') { const float y = static_cast<float>(x); std::memcpy(&out[0], &y, 4); }
         else std::memcpy(&out[0], &x, 8);
         return out;
     }
     if (!(value == PROTO_TRUE || value == PROTO_FALSE || (value && value->isInteger(ctx))))
         raiseType(ctx, "memoryview: invalid type for format '" + fmtName + "'");
+    const bool isSigned = f.code == 'b' || f.code == 'h' || f.code == 'i' || f.code == 'l' || f.code == 'q' || f.code == 'n';
     long long v = 0;
     try {
         v = value == PROTO_TRUE ? 1 : value == PROTO_FALSE ? 0 : value->asLong(ctx);
     } catch (const proto::ProtoException& overflow) {
         PythonEnvironment::rethrowUnlessOverflow(ctx, overflow);
-        raiseValue(ctx, "memoryview: invalid value for format '" + fmtName + "'");
+        // Beyond long long: an unsigned 64-bit item holds up to 2**64-1.
+        std::string hex;
+        if (!isSigned && f.size == 8 && value->integerSign(ctx) > 0) {
+            value->asIntegerString(ctx, 16)->toUTF8String(ctx, hex);
+        }
+        if (hex.empty() || hex.size() > 16)
+            raiseValue(ctx, "memoryview: invalid value for format '" + fmtName + "'");
+        const unsigned long long uv = std::stoull(hex, nullptr, 16);
+        std::memcpy(&out[0], &uv, 8);
+        return out;
     }
-    const bool isSigned = f.code == 'b' || f.code == 'h' || f.code == 'i' || f.code == 'l' || f.code == 'q' || f.code == 'n';
     if (f.size < 8) {
         const long long bits = f.size * 8;
         const long long lo = isSigned ? -(1LL << (bits - 1)) : 0;
@@ -226,8 +286,6 @@ const PO* storeView(proto::ProtoContext* ctx, const PO* cls, const View& v) {
     mv->setAttribute(ctx, MV_KEY(ctx, "start"), ctx->fromInteger(v.start));
     mv->setAttribute(ctx, MV_KEY(ctx, "step"), ctx->fromInteger(v.step));
     mv->setAttribute(ctx, MV_KEY(ctx, "len"), ctx->fromInteger(v.len));
-    // Kept for readers of a contiguous byte range: [start, stop).
-    mv->setAttribute(ctx, MV_KEY(ctx, "stop"), ctx->fromInteger(v.start + v.len * v.format.size));
     mv->setAttribute(ctx, MV_KEY(ctx, "format"), PythonEnvironment::newStr(ctx, v.formatText));
     mv->setAttribute(ctx, MV_KEY(ctx, "readonly"), v.readonly ? PROTO_TRUE : PROTO_FALSE);
     if (v.epoch >= 0) mv->setAttribute(ctx, MV_KEY(ctx, "epoch"), ctx->fromInteger(v.epoch));
@@ -248,18 +306,47 @@ void sourceBytes(proto::ProtoContext* ctx, const View& v, std::string& all) {
         v.data->asString(ctx)->toUTF8String(ctx, all);
 }
 
+// The bytes [from, to) of the viewed object (clipped to its size), from one
+// version of it, without copying the rest: an item read is O(itemsize).
+void sourceRange(proto::ProtoContext* ctx, const View& v, long long from, long long to, std::string& out) {
+    out.clear();
+    if (from < 0) from = 0;
+    if (to <= from) return;
+    if (v.epoch >= 0) {
+        if (!bytearrayViewReadRange(ctx, v.data, v.epoch, static_cast<size_t>(from), static_cast<size_t>(to), out))
+            raiseValue(ctx, "memoryview: the viewed object is gone");
+        return;
+    }
+    const PO* d = v.data;
+    if (!d->isByteBuffer(ctx) && isCellObject(d) && !d->isString(ctx)) {
+        PythonEnvironment* env = envOf(ctx);
+        const PO* inner = env ? d->getAttribute(ctx, env->getDataString()) : nullptr;
+        if (inner && inner->isByteBuffer(ctx)) d = inner;
+    }
+    if (d->isByteBuffer(ctx)) {
+        const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+        const long long n = static_cast<long long>(bb->getSize(ctx));
+        if (to > n) to = n;
+        if (to > from) out.assign(bb->getBuffer(ctx) + from, static_cast<size_t>(to - from));
+        return;
+    }
+    std::string all;
+    sourceBytes(ctx, v, all);
+    const long long n = static_cast<long long>(all.size());
+    if (to > n) to = n;
+    if (to > from) out.assign(all, static_cast<size_t>(from), static_cast<size_t>(to - from));
+}
+
 // The view's bytes, items in order.
 void viewBytes(proto::ProtoContext* ctx, const View& v, std::string& out) {
+    if (contiguous(v)) {
+        sourceRange(ctx, v, v.start, v.start + v.len * v.format.size, out);
+        return;
+    }
     std::string all;
     sourceBytes(ctx, v, all);
     out.clear();
     const long long n = static_cast<long long>(all.size());
-    if (contiguous(v)) {
-        const long long a = std::min(v.start, n);
-        const long long b = std::min(v.start + v.len * v.format.size, n);
-        out.assign(all, static_cast<size_t>(a), static_cast<size_t>(std::max(a, b) - a));
-        return;
-    }
     out.reserve(static_cast<size_t>(v.len * v.format.size));
     for (long long i = 0; i < v.len; ++i) {
         const long long at = v.start + i * v.step;
@@ -344,12 +431,11 @@ MV_METHOD(mv_new_impl) {
     }
     if (obj && obj->isString(ctx)) raiseType(ctx, "memoryview: a bytes-like object is required, not 'str'");
     long long epoch = 0;
-    if (bytearrayWatch(ctx, obj, epoch)) {
-        std::string all;
-        bytearrayViewRead(ctx, obj, epoch, all);
+    size_t size = 0;
+    if (bytearrayWatch(ctx, obj, epoch, &size)) {
         v.data = obj;
         v.exporter = obj;
-        v.len = static_cast<long long>(all.size());
+        v.len = static_cast<long long>(size);
         v.readonly = false;
         v.epoch = epoch;
         return storeView(ctx, cls, v);
@@ -451,7 +537,18 @@ long long itemIndex(proto::ProtoContext* ctx, const View& v, const PO* key) {
     long long i = 0;
     if (key == PROTO_TRUE || key == PROTO_FALSE) i = key == PROTO_TRUE ? 1 : 0;
     else if (key && key->isInteger(ctx)) i = key->asLong(ctx);
-    else raiseType(ctx, "memoryview: invalid slice key");
+    else {
+        // Any object with __index__, as CPython's PyNumber_AsSsize_t.
+        PythonEnvironment* env = envOf(ctx);
+        const PO* idx = (env && key && !key->isDouble(ctx) && !key->isString(ctx))
+            ? env->getAttribute(ctx, env->getType(ctx, key), PythonEnvironment::getInternedString(ctx, "__index__"), false)
+            : nullptr;
+        if (!idx || idx == PROTO_NONE) raiseType(ctx, "memoryview: invalid slice key");
+        const PO* r = env->callMethod(key, "__index__", {});
+        if (!r) throw std::runtime_error("memoryview: __index__ raised");
+        if (!r->isInteger(ctx)) raiseType(ctx, "__index__ returned non-int");
+        i = r->asLong(ctx);
+    }
     if (i < 0) i += v.len;
     if (i < 0 || i >= v.len) raiseIndex(ctx, "index out of bounds on dimension 1");
     return i;
@@ -493,11 +590,11 @@ MV_METHOD(mv_getitem) {
         return storeView(ctx, env->getType(ctx, mv), s);
     }
     const long long i = itemIndex(ctx, v, key);
-    std::string all;
-    sourceBytes(ctx, v, all);
     const long long at = v.start + i * v.step;
-    if (at < 0 || at + v.format.size > static_cast<long long>(all.size())) raiseIndex(ctx, "index out of bounds on dimension 1");
-    return decodeItem(ctx, v.format, all.data() + at);
+    std::string item;
+    if (at >= 0) sourceRange(ctx, v, at, at + v.format.size, item);
+    if (at < 0 || static_cast<long long>(item.size()) != v.format.size) raiseIndex(ctx, "index out of bounds on dimension 1");
+    return decodeItem(ctx, v.format, item.data());
 }
 
 MV_METHOD(mv_setitem) {
@@ -622,11 +719,19 @@ MV_METHOD(mv_toreadonly) {
 }
 
 MV_METHOD(mv_eq) {
-    MV_RECEIVER("__eq__", v)
+    (void)link; (void)kwargs;
+    unsigned shift = 0;
+    const PO* mv = receiver(ctx, self, args, shift, "__eq__");
     PythonEnvironment* env = envOf(ctx);
     if (argc(ctx, args, shift) != 1) raiseType(ctx, "expected 1 argument");
     const PO* other = arg(ctx, args, shift, 0);
+    // A released view compares equal to itself only, as CPython's
+    // memory_richcompare: it never raises.
     if (other == mv) return PROTO_TRUE;
+    auto released = [&](const PO* m) { return intAttr(ctx, m, MV_KEY(ctx, "state"), kLive) == kReleased; };
+    if (released(mv) || (isMemoryview(ctx, other) && released(other))) return PROTO_FALSE;
+    View v;
+    loadView(ctx, mv, v);
     if (isMemoryview(ctx, other)) {
         View o;
         loadView(ctx, other, o);
@@ -659,6 +764,9 @@ MV_METHOD(mv_hash) {
     MV_RECEIVER("__hash__", v)
     if (!v.readonly) raiseValue(ctx, "cannot hash writable memoryview object");
     if (!isByteFormat(v.format.code)) raiseValue(ctx, "memoryview: hashing is restricted to formats 'B', 'b' or 'c'");
+    // A read-only view of a bytearray hashes as its exporter does, as
+    // CPython's memory_hash: the bytearray is unhashable.
+    if (v.epoch >= 0) raiseType(ctx, "unhashable type: 'bytearray'");
     PythonEnvironment* env = envOf(ctx);
     std::string a;
     viewBytes(ctx, v, a);
@@ -691,6 +799,13 @@ MV_METHOD(mv_index) {
     return env->callMethod(lst, "index", a);
 }
 
+// __reduce_ex__ / __reduce__: a view is not picklable (nor copyable), as
+// in CPython; the default object reduction produced an unloadable payload.
+MV_METHOD(mv_reduce) {
+    (void)link; (void)kwargs; (void)self; (void)args;
+    raiseType(ctx, "cannot pickle memoryview objects");
+}
+
 MV_METHOD(mv_repr) {
     (void)link; (void)kwargs;
     unsigned shift = 0;
@@ -701,9 +816,12 @@ MV_METHOD(mv_repr) {
     return PythonEnvironment::newStr(ctx, buf);
 }
 
+// __buffer__(flags): a new view that holds an export until
+// __release_buffer__ (or its release()), as CPython's buffer protocol does.
 MV_METHOD(mv_buffer) {
     MV_RECEIVER("__buffer__", v)
-    return storeView(ctx, mvType(ctx), v);
+    const PO* view = storeView(ctx, mvType(ctx), v);
+    return mv_enter(ctx, view, nullptr, nullptr, nullptr);
 }
 
 MV_METHOD(mv_release_buffer) {
@@ -793,6 +911,8 @@ const proto::ProtoObject* makeMemoryviewType(proto::ProtoContext* ctx, const pro
     method("__enter__", mv_enter);
     method("__exit__", mv_exit);
     method("__buffer__", mv_buffer);
+    method("__reduce_ex__", mv_reduce);
+    method("__reduce__", mv_reduce);
     method("__release_buffer__", mv_release_buffer);
     method("tobytes", mv_tobytes);
     method("tolist", mv_tolist);
