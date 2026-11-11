@@ -1317,6 +1317,8 @@ public:
 
     /** Compute (if absent) and return cached flags for `cls`. */
     uint32_t ensureClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
+    void classAttributeChanged(proto::ProtoContext* ctx, const proto::ProtoObject* cls,
+                               const proto::ProtoString* name);
 
     const proto::ProtoString* getGetattrDunderString() const { return getattrDunderString; }
     const proto::ProtoString* getGetattributeDunderString() const { return getattributeDunderString; }
@@ -1732,6 +1734,10 @@ public:
      * @brief Returns the string representation of an object (Step 1120).
      */
     static std::string reprObject(proto::ProtoContext* context, const proto::ProtoObject* obj);
+    /** `out`, the result of a Python-level `dunder` (__str__/__repr__) call, or TypeError
+     *  "<dunder> returned non-string (type T)" when it is not a str (CPython). */
+    static const proto::ProtoObject* checkStrResult(proto::ProtoContext* context, const proto::ProtoObject* out,
+                                                    const char* dunder);
     /** repr() of a str given as UTF-8: CPython's quoting and escapes, applied
      *  per code point (printable non-ASCII characters are kept). */
     static std::string reprStr(const std::string& utf8);

@@ -265,7 +265,9 @@ internal-name filters are built on them. `test/static/check_escape_boundary.py`
 (the `static_escape_boundary` ctest) works on statements (comments and line
 breaks removed) and fails on one that holds U+0001 as a char literal or a
 one-character string in any escape spelling (`'\x01'`, `'\1'`, `"\u0001"`, ...)
-or compares a name's first element with the integer 1, outside a line marked
+or builds it from an integer (`char(1)`, `static_cast<char>(1)`), or compares a
+name's first element with the integer 1 (also through a cast) or tests it as a
+control character (`< ' '`, `< 0x20`, `<= 0x1f`), outside a line marked
 `escape-boundary`, or that passes to a protoCore attribute call
 (`get`/`set`/`has`/`remove`/`delete...Attribute...`, or a member pointer to
 one) a key made from a run-time string (`->asString()`, or

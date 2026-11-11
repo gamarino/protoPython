@@ -13,8 +13,11 @@ call split over several lines is one unit. It fails when a statement
 
   * re-implements the rule: holds the character U+0001 as a char literal
     ('\\x01', '\\1', '\\001', '\\u0001', ...), or the one-character string
-    in any of those spellings (a prefix being built or tested), or compares
-    an element of a string (`s[i]`, `.at(i)`, `.front()`) with the integer 1;
+    in any of those spellings (a prefix being built or tested), builds it
+    from an integer (`char(1)`, `(char)1`, `static_cast<char>(1)`), compares
+    the first element of a string (`s[0]`, `.at(0)`, `.front()`, also inside
+    a cast) with the integer 1, or tests it as a control character
+    (`s[0] < ' '`, `< 0x20`, `<= 0x1f`);
   * passes, as an argument of a protoCore attribute call
     (get/set/has/remove/delete...Attribute...), a key made from a run-time
     string: `->asString(...)`, or `getInternedString`, `createSymbol`,
@@ -69,8 +72,15 @@ STR_U1 = re.compile(r'"' + U1 + r'"')
 # The first character of a name compared with the integer 1 (an element
 # other than the first is not a prefix test: bytecode, buffers).
 FIRST = r"(\[\s*0\s*\]|\bat\s*\(\s*0\s*\)|\bfront\s*\(\s*\))"
-INT_U1 = re.compile(FIRST + r"\s*(==|!=)\s*(0x0*1|1)\b(?![.\w])"
-                    r"|(?<![\w.])(0x0*1|1)\s*(==|!=)\s*[A-Za-z_][\w.>-]*" + FIRST)
+# A cast around the element (`static_cast<unsigned char>(n[0]) == 0x01`)
+# leaves closing parentheses between it and the comparison.
+INT_U1 = re.compile(FIRST + r"\s*\)*\s*(==|!=)\s*(0x0*1|1)\b(?![.\w])"
+                    r"|(?<![\w.])(0x0*1|1)\s*(==|!=)\s*[\w<>:\s(]*?[A-Za-z_][\w.>-]*" + FIRST)
+# The first character tested as a control character: `n[0] < ' '`,
+# `n[0] < 0x20`, `n[0] <= 0x1f`.
+RANGE_U1 = re.compile(FIRST + r"\s*\)*\s*(<\s*(' '|0x0*20\b|32\b|'\\x20')|<=\s*(0x0*1[fF]\b|31\b))")
+# U+0001 built as a char from an integer: char(1), (char)1, static_cast<char>(0x01).
+CHAR_INT_U1 = re.compile(r"(\bchar\s*\(\s*|\(\s*(?:unsigned\s+)?char\s*\)\s*|static_cast\s*<\s*(?:unsigned\s+)?char\s*>\s*\(\s*)(0x0*1|1)\b(?![.\w])")
 MEMPTR_CALL = re.compile(r"\(\s*[^()]*?(?:->\*|\.\*)\s*([A-Za-z_]\w*)\s*\)\s*\(")
 CAST = re.compile(r"^\s*(?:static_cast|reinterpret_cast|const_cast)\s*<")
 CALL = re.compile(r"^\s*([A-Za-z_]\w*)\s*\(")
@@ -383,7 +393,8 @@ for path, raw, code in PARSED:
         marked = any(mk in raw_lines[k - 1] for k in range(first, min(last, len(raw_lines)) + 1) for mk in MARKERS)
         if marked:
             continue
-        if CHAR_U1.search(stmt) or STR_U1.search(stmt) or INT_U1.search(stmt):
+        if (CHAR_U1.search(stmt) or STR_U1.search(stmt) or INT_U1.search(stmt)
+                or RANGE_U1.search(stmt) or CHAR_INT_U1.search(stmt)):
             problems.append(f"{rel}:{first}: escaping rule re-implemented: {stmt[:160]}")
         calls = [m.end() - 1 for m in ATTR_CALL.finditer(stmt)]
         for m in MEMPTR_CALL.finditer(stmt):

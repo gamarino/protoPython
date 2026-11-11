@@ -893,7 +893,8 @@ static const proto::ProtoObject* py_print(
                 } else if (strMethod && strMethod != PROTO_NONE) {
                     // A __str__ written in Python (user classes, Enum): it was
                     // skipped, so print() showed repr() instead.
-                    const proto::ProtoObject* out = env->callObject(strMethod, {obj});
+                    const proto::ProtoObject* out = PythonEnvironment::checkStrResult(
+                        context, env->callObject(strMethod, {obj}), "__str__");
                     if (out && out->isString(context)) {
                         out->asString(context)->toUTF8String(context, rendered);
                         gotStr = true;
@@ -2608,6 +2609,11 @@ static const proto::ProtoObject* py_type_setattr(
     // A built-in type is immutable, whichever __setattr__ reaches it.
     if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
         if (env->builtinAttributeWriteRejected(context, target, nameS, /*isDelete=*/false)) return nullptr;
+    // The generic store (no metaclass __setattr__ re-entry): it keeps the
+    // __bases__/__mro__ machinery, the __dict__ mirror and the cached class
+    // flags in step, as a plain `Cls.name = v` does.
+    if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
+        return env->genericSetAttribute(context, target, nameS, value) ? PROTO_NONE : nullptr;
     const_cast<proto::ProtoObject*>(target)->setAttribute(context, nameS, value);
     return PROTO_NONE;
 }

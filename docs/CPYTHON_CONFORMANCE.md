@@ -143,15 +143,24 @@ defect and adds a `test/regression/*.py` test registered in
   (planned for 1.3.0). Writes through it reach the object: `d[k] = v`,
   `update()` and `|=` apply only the pairs they store, and `pop`, `popitem`,
   `setdefault`, `del d[k]` and `clear()` first take the object's current
-  namespace, so no mutation writes a stale value back or misses a name set
+  namespace (pop, setdefault and del only the touched name), so no mutation writes a stale value back or misses a name set
   after the dict was taken. What remains:
   - reads through a held dict are stale: `d = o.__dict__; o.x = 1` leaves
     `d['x']` missing or old, and `o.__dict__ is o.__dict__` is False;
   - **the AttrDict / Bunch idiom loses writes both ways:** after
     `self.__dict__ = self` in a dict subclass, `b['d'] = 4` is not `b.d` and
     `b.c = 3` is not `b['c']`;
-  - `o.__dict__[k] = v` costs time proportional to the instance's size
-    (about 9.5 s for 1,000 writes); a held dict or `setattr` does not.
+  - `o.__dict__[k] = v` through a fresh `o.__dict__` costs time linear in
+    the instance's size per write (a namespace resync per access), so
+    filling an instance this way is quadratic overall (2,000 writes: about
+    1.2 s); `popitem()` and `clear()` on a held dict pay the same resync,
+    while `pop`, `setdefault`, `del d[k]`, `update` and `setattr` do not
+    depend on the size;
+  - with `__slots__` and `__dict__` together, slot values also appear in
+    `vars(o)`.
+  A name owned by a data descriptor of the type (property, `__slots__`
+  member) written through the dict stays in the namespace and does not
+  shadow the descriptor, as in CPython.
 - **collections.abc:** the ABCs are native classes without `ABCMeta`; each root ABC's
   `__init_subclass__` computes `__abstractmethods__`, so a subclass whose own
   `__init_subclass__` skips `super()` is not checked for abstract methods.
