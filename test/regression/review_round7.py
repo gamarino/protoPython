@@ -139,24 +139,24 @@ for fill in (b'*', bytearray(b'*')):
 
 SECTIONS['M2_codecs'] = r'''
 import codecs
-assert b'\xed\xa0\x80'.decode('utf-8', 'surrogatepass') == '\ud800'
-assert '\ud800'.encode('utf-8', 'surrogatepass') == b'\xed\xa0\x80'
-assert 'h\xe9\U0001f600'.encode('utf-16') == b'\xff\xfeh\x00\xe9\x00=\xd8\x00\xde'
-assert b'\xff\xfeh\x00\xe9\x00=\xd8\x00\xde'.decode('utf-16') == 'h\xe9\U0001f600'
-assert 'ab'.encode('utf-16-be') == b'\x00a\x00b' and 'ab'.encode('utf-16-le') == b'a\x00b\x00'
-assert 'a'.encode('utf-32') == b'\xff\xfe\x00\x00a\x00\x00\x00'
-assert b'\x00\x00\x00a'.decode('utf-32-be') == 'a'
-assert 'A+€'.encode('utf-7') == b'A+-+IKw-' and b'A+-+IKw-'.decode('utf-7') == 'A+€'
+assert b'\xed\xa0\x80'.decode('utf-8', 'surrogatepass') == '\ud800', ascii(b'\xed\xa0\x80'.decode('utf-8', 'surrogatepass'))
+assert '\ud800'.encode('utf-8', 'surrogatepass') == b'\xed\xa0\x80', ascii('\ud800'.encode('utf-8', 'surrogatepass'))
+assert 'h\xe9\U0001f600'.encode('utf-16') == b'\xff\xfeh\x00\xe9\x00=\xd8\x00\xde', ascii('h\xe9\U0001f600'.encode('utf-16'))
+assert b'\xff\xfeh\x00\xe9\x00=\xd8\x00\xde'.decode('utf-16') == 'h\xe9\U0001f600', ascii(b'\xff\xfeh\x00\xe9\x00=\xd8\x00\xde'.decode('utf-16'))
+assert 'ab'.encode('utf-16-be') == b'\x00a\x00b' and 'ab'.encode('utf-16-le') == b'a\x00b\x00', "'ab'.encode('utf-16-be') == b'\\x00a\\x00b"
+assert 'a'.encode('utf-32') == b'\xff\xfe\x00\x00a\x00\x00\x00', ascii('a'.encode('utf-32'))
+assert b'\x00\x00\x00a'.decode('utf-32-be') == 'a', ascii(b'\x00\x00\x00a'.decode('utf-32-be'))
+assert 'A+\u20ac'.encode('utf-7') == b'A+-+IKw-' and b'A+-+IKw-'.decode('utf-7') == 'A+\u20ac', "'A+\u20ac'.encode('utf-7') == b'A+-+IKw-' and"
 try:
     b'\x00\xd8a\x00'.decode('utf-16-le')
 except UnicodeDecodeError as e:
     assert (e.start, e.end, e.reason) == (0, 2, 'illegal UTF-16 surrogate'), (e.start, e.end, e.reason)
 else:
     raise AssertionError('lone surrogate decoded')
-assert b'\x00\xd8a\x00'.decode('utf-16-le', 'replace') == '�a'
-assert b'\x00\xd8a\x00'.decode('utf-16-le', 'surrogatepass') == '\ud800a'
+assert b'\x00\xd8a\x00'.decode('utf-16-le', 'replace') == '\ufffda', ascii(b'\x00\xd8a\x00'.decode('utf-16-le', 'replace'))
+assert b'\x00\xd8a\x00'.decode('utf-16-le', 'surrogatepass') == '\ud800a', ascii(b'\x00\xd8a\x00'.decode('utf-16-le', 'surrogatepass'))
 import json
-assert json.loads('"x"'.encode('utf-16')) == 'x' and json.loads('[1]'.encode('utf-32-le')) == [1]
+assert json.loads('"x"'.encode('utf-16')) == 'x' and json.loads('[1]'.encode('utf-32-le')) == [1], 'json.loads(\'"x"\'.encode(\'utf-16\')) == \'x'
 '''
 
 SECTIONS['M2_failing_import'] = r'''
