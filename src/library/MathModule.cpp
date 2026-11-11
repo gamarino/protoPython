@@ -1,6 +1,7 @@
 #include <protoPython/MathModule.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/Tokenizer.h>
+#include <protoPython/ExecutionEngine.h>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -739,19 +740,89 @@ static const proto::ProtoObject* py_prod(
     PythonEnvironment::TransientPin pinIt(env, it);
     PythonEnvironment::TransientPin pinAcc(env, acc);
     while (const proto::ProtoObject* item = env->next(it)) {
-        acc = env->binaryOp(acc, TokenType::Star, item);
+        acc = ::protoPython::multiplyOperator(ctx, acc, item);
         if (!acc) return nullptr;
         pinAcc.reset(acc);
     }
     return acc;
 }
 
+// math.sumprod: CPython 3.12+'s algorithm (mathmodule.c math_sumprod_impl).
+// Leading exact-int pairs accumulate in a C integer; then leading float pairs
+// (float*float, float*int, int*float, bool counting as an int) accumulate
+// in a triple-length accumulator built from error-free transformations
+// (Ogita, Rump and Oishi, "Accurate Sum and Dot Product", algorithm 5.10 with
+// SumKVert for K=3), so [1e20, 1.0, -1e20] . [1, 1, 1] is 1.0. Each fast path
+// is left for good at the first pair it cannot take (or a non-finite
+// partial), its subtotal is added to the running total, and the remaining
+// pairs use Python's * and +.
+namespace {
+struct DoubleLength { double hi; double lo; };
+struct TripleLength { double hi; double lo; double tiny; };
+
+inline DoubleLength dlSum(double a, double b) {
+    // Algorithm 3.1: error-free transformation of the sum.
+    const double x = a + b;
+    const double z = x - a;
+    const double y = (a - (x - z)) + (b - z);
+    return {x, y};
+}
+
+inline DoubleLength dlMul(double x, double y) {
+    // Algorithm 3.5: error-free transformation of a product.
+    const double z = x * y;
+    const double zz = std::fma(x, y, -z);
+    return {z, zz};
+}
+
+inline TripleLength tlFma(double x, double y, TripleLength total) {
+    const DoubleLength pr = dlMul(x, y);
+    const DoubleLength sm = dlSum(total.hi, pr.hi);
+    const DoubleLength r1 = dlSum(total.lo, pr.lo);
+    const DoubleLength r2 = dlSum(r1.hi, sm.lo);
+    return {sm.hi, r2.hi, total.tiny + r1.lo + r2.lo};
+}
+
+inline double tlToDouble(TripleLength total) {
+    const DoubleLength last = dlSum(total.lo, total.hi);
+    return total.tiny + last.lo + last.hi;
+}
+
+// a * b in `out`, or true when it leaves the long long range (portable:
+// MSVC has no __builtin_mul_overflow).
+bool mulOverflows(long long a, long long b, long long& out) {
+    constexpr long long kMax = std::numeric_limits<long long>::max();
+    constexpr long long kMin = std::numeric_limits<long long>::min();
+    if (a > 0) {
+        if (b > 0 ? a > kMax / b : b < kMin / a) return true;
+    } else if (a < 0) {
+        if (b > 0 ? a < kMin / b : (b != 0 && a < kMax / b)) return true;
+    }
+    out = a * b;
+    return false;
+}
+
+bool addOverflows(long long a, long long b) {
+    constexpr long long kMax = std::numeric_limits<long long>::max();
+    constexpr long long kMin = std::numeric_limits<long long>::min();
+    return (b > 0 && a > kMax - b) || (b < 0 && a < kMin - b);
+}
+
+// float(v) for an exact int or a bool, correctly rounded; false past the
+// float range (CPython's PyLong_AsDouble failing), with nothing raised.
+bool exactIntAsDouble(proto::ProtoContext* ctx, const proto::ProtoObject* v, double& out) {
+    if (v == PROTO_TRUE || v == PROTO_FALSE) { out = v == PROTO_TRUE ? 1.0 : 0.0; return true; }
+    if (proto::isSmallInt(v)) { out = static_cast<double>(proto::asSmallInt(v)); return true; }
+    std::string digits;
+    v->asIntegerString(ctx, 10)->toUTF8String(ctx, digits);
+    out = std::strtod(digits.c_str(), nullptr);
+    return !std::isinf(out);
+}
+}  // namespace
+
 static const proto::ProtoObject* py_sumprod(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
-    // sumprod(p, q): sum of p[i] * q[i] with Python's `+` and `*`, so ints
-    // stay exact ints (the result was always a float). Floats are summed
-    // in order, without CPython's extended-precision accumulation.
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return nullptr;
     if (posArgs->getSize(ctx) != 2) {
@@ -764,24 +835,92 @@ static const proto::ProtoObject* py_sumprod(
     const proto::ProtoObject* ib = env->iter(posArgs->getAt(ctx, 1));
     if (!ib) return nullptr;
     PythonEnvironment::TransientPin pinB(env, ib);
-    const proto::ProtoObject* acc = ctx->fromInteger(0);
-    PythonEnvironment::TransientPin pinAcc(env, acc);
+    const proto::ProtoObject* total = ctx->fromInteger(0);
+    PythonEnvironment::TransientPin pinTotal(env, total);
+    auto addToTotal = [&](const proto::ProtoObject* term) -> bool {
+        PythonEnvironment::TransientPin pinTerm(env, term);
+        total = ::protoPython::addOperator(ctx, total, term);
+        if (!total) return false;
+        pinTotal.reset(total);
+        return true;
+    };
+    // An exact int (not a bool, not a subclass instance).
+    auto isExactInt = [&](const proto::ProtoObject* v) {
+        return v && v != PROTO_TRUE && v != PROTO_FALSE && v->isInteger(ctx);
+    };
+    bool intPathEnabled = true, intTotalInUse = false;
+    bool fltPathEnabled = true, fltTotalInUse = false;
+    long long intTotal = 0;
+    TripleLength fltTotal{0.0, 0.0, 0.0};
     for (;;) {
         const proto::ProtoObject* x = env->next(ia);
         PythonEnvironment::TransientPin pinX(env, x);
         const proto::ProtoObject* y = env->next(ib);
-        if (!x && !y) break;
-        if (!x || !y) {
+        PythonEnvironment::TransientPin pinY(env, y);
+        if ((x == nullptr) != (y == nullptr)) {
             env->raiseValueError(ctx, PythonEnvironment::newStr(ctx, "Inputs are not the same length"));
             return nullptr;
         }
-        const proto::ProtoObject* p = env->binaryOp(x, TokenType::Star, y);
-        if (!p) return nullptr;
-        acc = env->binaryOp(acc, TokenType::Plus, p);
-        if (!acc) return nullptr;
-        pinAcc.reset(acc);
+        const bool finished = x == nullptr;
+
+        if (intPathEnabled) {
+            if (!finished && proto::isSmallInt(x) && proto::isSmallInt(y)) {
+                long long prod = 0;
+                if (!mulOverflows(static_cast<long long>(proto::asSmallInt(x)),
+                                  static_cast<long long>(proto::asSmallInt(y)), prod)
+                    && !addOverflows(intTotal, prod)) {
+                    intTotal += prod;
+                    intTotalInUse = true;
+                    continue;
+                }
+            }
+            // Finished, overflowed, or a pair that is not two exact ints.
+            intPathEnabled = false;
+            if (intTotalInUse) {
+                if (!addToTotal(ctx->fromInteger(intTotal))) return nullptr;
+                intTotal = 0;
+                intTotalInUse = false;
+            }
+        }
+
+        if (fltPathEnabled) {
+            bool taken = false;
+            if (!finished) {
+                double fp = 0.0, fq = 0.0;
+                const bool pFloat = x->isDouble(ctx), qFloat = y->isDouble(ctx);
+                bool ok = false;
+                if (pFloat && qFloat) {
+                    fp = x->asDouble(ctx); fq = y->asDouble(ctx); ok = true;
+                } else if (pFloat && (isExactInt(y) || y == PROTO_TRUE || y == PROTO_FALSE)) {
+                    fp = x->asDouble(ctx); ok = exactIntAsDouble(ctx, y, fq);
+                } else if (qFloat && (isExactInt(x) || x == PROTO_TRUE || x == PROTO_FALSE)) {
+                    fq = y->asDouble(ctx); ok = exactIntAsDouble(ctx, x, fp);
+                }
+                if (ok) {
+                    const TripleLength next = tlFma(fp, fq, fltTotal);
+                    if (std::isfinite(next.hi)) {
+                        fltTotal = next;
+                        fltTotalInUse = true;
+                        taken = true;
+                    }
+                }
+            }
+            if (taken) continue;
+            // Finished, overflowed, a non-float pair or a non-finite partial.
+            fltPathEnabled = false;
+            if (fltTotalInUse) {
+                if (!addToTotal(ctx->fromDouble(tlToDouble(fltTotal)))) return nullptr;
+                fltTotal = {0.0, 0.0, 0.0};
+                fltTotalInUse = false;
+            }
+        }
+
+        if (finished) break;
+        const proto::ProtoObject* term = ::protoPython::multiplyOperator(ctx, x, y);
+        if (!term) return nullptr;
+        if (!addToTotal(term)) return nullptr;
     }
-    return acc;
+    return total;
 }
 
 static const proto::ProtoObject* py_isqrt(

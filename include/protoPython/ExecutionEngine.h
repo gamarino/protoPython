@@ -431,6 +431,11 @@ const proto::ProtoObject* invokePythonCallable(
 const proto::ProtoObject* addOperator(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b);
 
+/** `a * b` with the semantics of the `*` operator (__mul__, the other
+ *  operand's __rmul__, TypeError naming both types). Used by math.sumprod. */
+const proto::ProtoObject* multiplyOperator(proto::ProtoContext* ctx,
+    const proto::ProtoObject* a, const proto::ProtoObject* b);
+
 /** `item in container` with the semantics of the `in` operator (__contains__,
  *  then iteration or the old sequence protocol; TypeError for a container
  *  that supports neither). True/False, or nullptr with an exception pending. */

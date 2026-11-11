@@ -138,10 +138,20 @@ defect and adds a `test/regression/*.py` test registered in
   computes them), and converting such an int to float says `LargeInteger value
   exceeds long long range` in `int.__float__`, `complex()`, `sum()` and
   `divmod()` (CPython: `int too large to convert to float`).
-- **`__dict__` of a function or an instance (found 2026-11-11):** writes
-  through `obj.__dict__` reach the object, but the mapping returned is a
-  snapshot: `d = f.__dict__; f.x = 1` leaves `x` out of `d`, and
-  `f.__dict__ is f.__dict__` is False (CPython returns the live dict).
+- **`__dict__` of a function or an instance (found 2026-11-11):** the
+  mapping returned is a snapshot of the namespace, not the live dict
+  (planned for 1.3.0). Writes through it reach the object: `d[k] = v`,
+  `update()` and `|=` apply only the pairs they store, and `pop`, `popitem`,
+  `setdefault`, `del d[k]` and `clear()` first take the object's current
+  namespace, so no mutation writes a stale value back or misses a name set
+  after the dict was taken. What remains:
+  - reads through a held dict are stale: `d = o.__dict__; o.x = 1` leaves
+    `d['x']` missing or old, and `o.__dict__ is o.__dict__` is False;
+  - **the AttrDict / Bunch idiom loses writes both ways:** after
+    `self.__dict__ = self` in a dict subclass, `b['d'] = 4` is not `b.d` and
+    `b.c = 3` is not `b['c']`;
+  - `o.__dict__[k] = v` costs time proportional to the instance's size
+    (about 9.5 s for 1,000 writes); a held dict or `setattr` does not.
 - **collections.abc:** the ABCs are native classes without `ABCMeta`; each root ABC's
   `__init_subclass__` computes `__abstractmethods__`, so a subclass whose own
   `__init_subclass__` skips `super()` is not checked for abstract methods.

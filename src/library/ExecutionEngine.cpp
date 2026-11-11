@@ -4385,6 +4385,11 @@ const proto::ProtoObject* addOperator(proto::ProtoContext* ctx,
     return binaryAdd(ctx, a, b);
 }
 
+const proto::ProtoObject* multiplyOperator(proto::ProtoContext* ctx,
+    const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    return binaryMultiply(ctx, a, b);
+}
+
 const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     return invokeCallable(ctx, callable, args, kwargs);
@@ -5013,7 +5018,7 @@ static const proto::ProtoString* derefSlotName(proto::ProtoContext* ctx, PythonE
         const proto::proto_ulong j = static_cast<proto::proto_ulong>(slot) - nVar;
         if (freevars && j < freevars->getSize(ctx)) nameObj = freevars->getAt(ctx, static_cast<int>(j));
     }
-    return (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) ? nameObj->asString(ctx) : nullptr;
+    return (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) ? nameObj->asString(ctx) : nullptr;  // raw-key: a compiler-made name from co_varnames/co_cellvars/co_freevars
 }
 
 /** Reading or deleting an empty cell: CPython's messages. */

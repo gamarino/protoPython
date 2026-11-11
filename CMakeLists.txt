@@ -743,6 +743,22 @@ set_tests_properties(protopy_review_round10_gc PROPERTIES
     ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
     PASS_REGULAR_EXPRESSION "review_round10: ok"
     LABELS "regression_gate")
+add_test(NAME protopy_review_round11
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/review_round11.py)
+set_tests_properties(protopy_review_round11 PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 300
+    PASS_REGULAR_EXPRESSION "review_round11: ok"
+    LABELS "regression_gate")
+# The same under GC pressure.
+add_test(NAME protopy_review_round11_gc
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/review_round11.py)
+set_tests_properties(protopy_review_round11_gc PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 600
+    ENVIRONMENT "PROTOCORE_GC_CONTEXT_THRESHOLD=100"
+    PASS_REGULAR_EXPRESSION "review_round11: ok"
+    LABELS "regression_gate")
 # A mutating __eq__ makes a dict or set lookup compare each stored key once.
 add_test(NAME protopy_hash_restart_memo
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/hash_restart_memo.py)

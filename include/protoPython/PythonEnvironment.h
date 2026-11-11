@@ -218,9 +218,9 @@ public:
     static const proto::ProtoObject* formatIntObject(proto::ProtoContext* ctx, const proto::ProtoObject* value,
                                                      const std::string& spec);
     static const proto::ProtoObject* formatFloatObject(proto::ProtoContext* ctx, double value,
-                                                       const std::string& spec);
+                                                       const std::string& spec, const char* typeName = nullptr);
     static const proto::ProtoObject* formatStringObject(proto::ProtoContext* ctx, const std::string& value,
-                                                        const std::string& spec);
+                                                        const std::string& spec, const char* typeName = nullptr);
     /**
      * format(value, spec) as the builtin does: the built-in formatter for an
      * exact int, bool, float or str (a subclass goes through its type's
@@ -1251,6 +1251,17 @@ public:
     const proto::ProtoString* getBytearrayKey() const { return bytearrayKey_; }
     const proto::ProtoString* getLocalsMappingKey() const { return localsMappingKey_; }
     const proto::ProtoString* getKeysString() const { return keysString; }
+    /** `\001__protopy_dict_proxy_target__`: an instance __dict__ view's owner.
+     *  Interned on first use (an interned string is never collected), so
+     *  startup allocates nothing for it. */
+    const proto::ProtoString* getDictProxyTargetString(proto::ProtoContext* ctx) {
+        const proto::ProtoString* s = dictProxyTargetString.load(std::memory_order_acquire);
+        if (!s) {
+            s = getInternedString(ctx, "\001__protopy_dict_proxy_target__");
+            dictProxyTargetString.store(s, std::memory_order_release);
+        }
+        return s;
+    }
     const proto::ProtoString* getSlotsString() const { return slotsString; }
     const proto::ProtoString* getIsSuperProxyString() const { return isSuperProxyString; }
     const proto::ProtoString* getPyGetAttrHandlerString() const { return pyGetAttrHandlerString_; }
@@ -1294,6 +1305,11 @@ public:
      *  without __dict__ (builtinAttributeWriteRejected decides): attribute
      *  stores on such objects take the full setAttribute path. */
     static constexpr uint32_t PYFLAG_NO_FAST_STORE         = 1u << 6;
+    /** Some MRO entry other than object, type, int, float, str or bool owns
+     *  __str__ or __repr__: str() and an empty-spec format() of an instance
+     *  of an int/float subclass must call them. Invalidated when a class
+     *  gains __str__ or __repr__. */
+    static constexpr uint32_t PYFLAG_HAS_CUSTOM_STR        = 1u << 7;
     static constexpr uint32_t PYFLAG_COMPUTED              = 1u << 31;
 
     /** Fast read of cached flags; returns 0 when not yet computed. */
@@ -2564,6 +2580,7 @@ private:
     const proto::ProtoString* delItemString{nullptr};
     const proto::ProtoString* dataString{nullptr};
     const proto::ProtoString* keysString{nullptr};
+    std::atomic<const proto::ProtoString*> dictProxyTargetString{nullptr};
     const proto::ProtoString* slotsString{nullptr};
     const proto::ProtoString* bytearrayKey_{nullptr};
     const proto::ProtoString* localsMappingKey_{nullptr};

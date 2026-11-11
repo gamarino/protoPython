@@ -25,8 +25,12 @@ struct Result {
 /** repr(float): the shortest string that reads back as the same double. */
 std::string floatRepr(double value);
 
-/** format(value, spec) for a float. */
-Result formatFloat(double value, const std::string& spec);
+/**
+ * format(value, spec) for a float. `typeName` (in this and the int and str
+ * formatters) names the receiver's type in error messages; null means the
+ * built-in type's own name.
+ */
+Result formatFloat(double value, const std::string& spec, const char* typeName = nullptr);
 
 /**
  * format(value, spec) for an int of any size. `negative` is its sign;
@@ -37,10 +41,10 @@ Result formatFloat(double value, const std::string& spec);
  */
 Result formatInt(bool negative, const std::function<std::string(int)>& digits,
                  const std::function<bool(double&)>& toDouble, const std::string& spec, bool isBool = false,
-                 bool boolValue = false);
+                 bool boolValue = false, const char* typeName = nullptr);
 
 /** format(value, spec) for a str (UTF-8 text). */
-Result formatString(const std::string& value, const std::string& spec);
+Result formatString(const std::string& value, const std::string& spec, const char* typeName = nullptr);
 
 /**
  * The % operator's float conversions (e E f F g G): `flags` are the

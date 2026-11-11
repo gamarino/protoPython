@@ -375,7 +375,7 @@ static const proto::ProtoObject* pack_impl(proto::ProtoContext* ctx,
                 }
                 case '?': {
                     bool tv = (v == PROTO_TRUE) || (v->isInteger(ctx) && v->asLong(ctx) != 0);
-                    out += tv ? '\x01' : '\x00';
+                    out += tv ? '\x01' : '\x00';  // raw-key: the packed byte of True, not a name
                     break;
                 }
             }

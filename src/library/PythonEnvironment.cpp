@@ -2323,12 +2323,14 @@ static void sysModulesStore(proto::ProtoContext* ctx, const proto::ProtoObject* 
                             const proto::ProtoString* name, const proto::ProtoObject* mod);
 static const proto::ProtoObject* py_dict_delitem(proto::ProtoContext*, const proto::ProtoObject*,
     const proto::ParentLink*, const proto::ProtoArguments*, const proto::ProtoKeywordArguments*);
+static void instanceDictRefresh(proto::ProtoContext* context, const proto::ProtoObject* view);
 
 /** The instance an instance-__dict__ view writes to, or nullptr for any other dict. */
 static const proto::ProtoObject* instanceDictOwner(proto::ProtoContext* ctx, const proto::ProtoObject* d) {
     if (!d) return nullptr;
-    const proto::ProtoString* targetS =
-        PythonEnvironment::getInternedString(ctx, "\001__protopy_dict_proxy_target__");
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* targetS = env ? env->getDictProxyTargetString(ctx)
+        : PythonEnvironment::getInternedString(ctx, "\001__protopy_dict_proxy_target__");
     if (d->hasOwnAttribute(ctx, targetS) != PROTO_TRUE) return nullptr;
     const proto::ProtoObject* owner = d->getOwnAttributeDirect(ctx, targetS);
     return (owner && owner != PROTO_NONE && owner != d) ? owner : nullptr;
@@ -2715,8 +2717,7 @@ static const proto::ProtoObject* py_object_get_dict(
 
     // PI: stash a back-reference on the dict so the proxy hooks below
     // can find the instance to write through to.
-    const proto::ProtoString* proxyTargetS =
-        PythonEnvironment::getInternedString(context, "\001__protopy_dict_proxy_target__");
+    const proto::ProtoString* proxyTargetS = env->getDictProxyTargetString(context);
     d = const_cast<proto::ProtoObject*>(d->setAttribute(context, proxyTargetS, mutableSelf));
 
     // __setitem__ / __delitem__ update the dict as dict's own do (so the
@@ -2740,6 +2741,7 @@ static const proto::ProtoObject* py_object_get_dict(
                       const proto::ProtoKeywordArguments* kw) -> const proto::ProtoObject* {
         PythonEnvironment* env_ = PythonEnvironment::fromContext(ctx);
         if (!env_ || !self_ || !args || args->getSize(ctx) < 1) return PROTO_NONE;
+        instanceDictRefresh(ctx, self_);
         py_dict_delitem(ctx, self_, pl, args, kw);  // KeyError when absent
         if (const proto::ProtoObject* owner = instanceDictOwner(ctx, self_)) {
             instanceDictOwnerRemove(ctx, env_, owner, args->getAt(ctx, 0));
@@ -3292,6 +3294,17 @@ static const proto::ProtoObject* py_float_float(
 }
 
 // float.__format__(spec): the format mini-language for floats.
+// True when no class of type(self)'s MRO but the built-in ones defines
+// __str__ or __repr__ (PYFLAG_HAS_CUSTOM_STR), so str(self) of an int or
+// float subclass instance is the built-in text of its value.
+static bool usesBuiltinStr(proto::ProtoContext* context, const proto::ProtoObject* self) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return false;
+    const proto::ProtoObject* cls = env->getType(context, self);
+    if (!cls || cls == PROTO_NONE) return false;
+    return (env->ensureClassFlags(context, cls) & PythonEnvironment::PYFLAG_HAS_CUSTOM_STR) == 0;
+}
+
 static const proto::ProtoObject* py_float_format(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments*) {
@@ -3305,7 +3318,15 @@ static const proto::ProtoObject* py_float_format(
     }
     std::string spec;
     specObj->asString(context)->toUTF8String(context, spec);
-    return PythonEnvironment::formatFloatObject(context, d, spec);
+    if (self->isDouble(context)) return PythonEnvironment::formatFloatObject(context, d, spec);
+    // A float subclass instance: an empty spec is str(self) (CPython's
+    // float.__format__), so an overridden __str__ or __repr__ shows.
+    if (spec.empty()) {
+        if (usesBuiltinStr(context, self)) return PythonEnvironment::formatFloatObject(context, d, spec);
+        return env ? env->callObject(env->getStrPrototype(), {self}) : nullptr;
+    }
+    const std::string typeName = PythonEnvironment::typeNameOf(context, self);
+    return PythonEnvironment::formatFloatObject(context, d, spec, typeName.c_str());
 }
 
 static const proto::ProtoObject* py_float_fromhex(
@@ -6760,7 +6781,7 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
     if (obj->isBoolean(context)) {
         return obj->asBoolean(context) ? "True" : "False";
     }
-    if (obj->isString(context)) {
+    if (proto::ProtoObject::isStringTagFast(obj)) {   // an exact str; a subclass may override __repr__
         std::string s;
         obj->asString(context)->toUTF8String(context, s);
         // CPython: repr(str) returns the quoted Python literal (single
@@ -7972,6 +7993,11 @@ static const proto::ProtoObject* py_int_str(
     const proto::ParentLink* link, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kw) {
     if (self == PROTO_TRUE || self == PROTO_FALSE)
         return PythonEnvironment::getInternedString(context, self == PROTO_TRUE ? "True" : "False")->asObject(context);
+    // A subclass instance shows type(self).__repr__, which may be overridden.
+    if (self && !self->isInteger(context) && intOperandValue(context, self)) {
+        if (!usesBuiltinStr(context, self))
+            return PythonEnvironment::newStr(context, PythonEnvironment::reprObject(context, self));
+    }
     return py_int_repr(context, self, link, args, kw);
 }
 
@@ -7994,6 +8020,20 @@ static const proto::ProtoObject* py_float_repr(
     }
     std::string s = py_float_format_short(val);
     return PythonEnvironment::newStr(context, s);
+}
+
+// float.__str__: repr() (CPython's float has no __str__ of its own:
+// object.__str__ calls type(self).__repr__, which a subclass may override).
+static const proto::ProtoObject* py_float_str(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* link, const proto::ProtoArguments* args, const proto::ProtoKeywordArguments* kw) {
+    if (self && !self->isDouble(context)) {
+        double d = 0.0;
+        if (floatReceiverValue(context, self, d) && !usesBuiltinStr(context, self))
+            return PythonEnvironment::newStr(context, PythonEnvironment::reprObject(context, self));
+    }
+    return py_float_repr(context, self, link, args, kw);
 }
 
 static const proto::ProtoObject* py_int_bool(
@@ -10725,6 +10765,9 @@ const proto::ProtoObject* PythonEnvironment::formatIntObject(proto::ProtoContext
     const bool isBool = (self == PROTO_TRUE || self == PROTO_FALSE);
     const proto::ProtoObject* intObj = intOperandValue(context, self);
     if (!intObj) return PROTO_NONE;
+    // An int subclass instance (bool is exact here) is named in messages.
+    std::string typeName;
+    if (!isBool && !self->isInteger(context)) typeName = PythonEnvironment::typeNameOf(context, self);
     if (spec.empty() && !isBool) return intObj->asIntegerString(context, 10)->asObject(context);
     bool negative = false;
     std::string decimal;
@@ -10742,7 +10785,8 @@ const proto::ProtoObject* PythonEnvironment::formatIntObject(proto::ProtoContext
         return !std::isinf(out);
     };
     const protoPython::numfmt::Result r =
-        protoPython::numfmt::formatInt(negative, digits, toDouble, spec, isBool, self == PROTO_TRUE);
+        protoPython::numfmt::formatInt(negative, digits, toDouble, spec, isBool, self == PROTO_TRUE,
+                                       typeName.empty() ? nullptr : typeName.c_str());
     if (r.err == protoPython::numfmt::Error::None) return PythonEnvironment::newStr(context, r.text);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
@@ -10754,8 +10798,8 @@ const proto::ProtoObject* PythonEnvironment::formatIntObject(proto::ProtoContext
 
 // format(str, spec) (protoPython::numfmt::formatString).
 const proto::ProtoObject* PythonEnvironment::formatStringObject(proto::ProtoContext* context, const std::string& value,
-                                                                const std::string& spec) {
-    const protoPython::numfmt::Result r = protoPython::numfmt::formatString(value, spec);
+                                                                const std::string& spec, const char* typeName) {
+    const protoPython::numfmt::Result r = protoPython::numfmt::formatString(value, spec, typeName);
     if (r.err == protoPython::numfmt::Error::None) return PythonEnvironment::newStr(context, r.text);
     if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
         env->raiseValueError(context, PythonEnvironment::newStr(context, r.message));
@@ -10764,8 +10808,8 @@ const proto::ProtoObject* PythonEnvironment::formatStringObject(proto::ProtoCont
 
 // format(float, spec) (protoPython::numfmt::formatFloat).
 const proto::ProtoObject* PythonEnvironment::formatFloatObject(proto::ProtoContext* context, double value,
-                                                               const std::string& spec) {
-    const protoPython::numfmt::Result r = protoPython::numfmt::formatFloat(value, spec);
+                                                               const std::string& spec, const char* typeName) {
+    const protoPython::numfmt::Result r = protoPython::numfmt::formatFloat(value, spec, typeName);
     if (r.err == protoPython::numfmt::Error::None) return PythonEnvironment::newStr(context, r.text);
     if (PythonEnvironment* env = PythonEnvironment::fromContext(context))
         env->raiseValueError(context, PythonEnvironment::newStr(context, r.message));
@@ -10899,6 +10943,14 @@ static const proto::ProtoObject* py_int_format(
             return nullptr;
         }
     }
+    // An int subclass instance: an empty spec is str(self) (CPython's
+    // int.__format__), so an overridden __str__ or __repr__ shows.
+    if (spec.empty() && self && !self->isInteger(context) && self != PROTO_TRUE && self != PROTO_FALSE
+        && intOperandValue(context, self)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (usesBuiltinStr(context, self)) return PythonEnvironment::formatIntObject(context, self, spec);
+        return env ? env->callObject(env->getStrPrototype(), {self}) : nullptr;
+    }
     return PythonEnvironment::formatIntObject(context, self, spec);
 }
 
@@ -10912,11 +10964,13 @@ static const proto::ProtoObject* py_str_format_dunder(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoArguments* posArgs, const proto::ProtoKeywordArguments*) {
     const proto::ProtoString* s = str_from_self(context, self);
+    const proto::ProtoObject* recv = self;
     // Unbound form str.__format__(value, spec) (Enum.__format__ uses it):
     // value and spec both arrive as arguments.
     proto::proto_ulong specIdx = 0;
     if (!s && posArgs && posArgs->getSize(context) >= 2) {
-        s = str_from_self(context, posArgs->getAt(context, 0));
+        recv = posArgs->getAt(context, 0);
+        s = str_from_self(context, recv);
         specIdx = 1;
     }
     if (!s) return PROTO_NONE;
@@ -10936,10 +10990,17 @@ static const proto::ProtoObject* py_str_format_dunder(
             return nullptr;
         }
     }
-    if (spec.empty()) return s->asObject(context);
+    const bool exact = recv && proto::ProtoObject::isStringTagFast(recv);
+    if (spec.empty()) {
+        if (exact) return recv;
+        // A str subclass instance: str(self), as CPython's str.__format__.
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        return env ? env->callObject(env->getStrPrototype(), {recv}) : s->asObject(context);
+    }
     std::string body;
     s->toUTF8String(context, body);
-    return PythonEnvironment::formatStringObject(context, body, spec);
+    const std::string typeName = exact ? std::string() : PythonEnvironment::typeNameOf(context, recv);
+    return PythonEnvironment::formatStringObject(context, body, spec, exact ? nullptr : typeName.c_str());
 }
 
 static const proto::ProtoObject* py_int_bit_length(
@@ -15781,69 +15842,31 @@ static const proto::ProtoObject* py_str_mod(
         }
         switch (spec) {
             case 's': {
-                // CPython %s calls str(), NOT repr() — string args
-                // come through verbatim (no quotes); user types with
-                // __str__ return their str spelling, not their repr.
-                // Walk type(arg).__mro__ for an own __str__ first and
-                // invoke it before falling through to reprObject.
+                // str(arg): an exact str verbatim, anything else (a str
+                // subclass included) through str(), so type(arg).__str__
+                // and its exceptions apply.
                 std::string s;
-                if (arg && arg != PROTO_NONE && arg->isString(context)) {
+                if (arg && proto::ProtoObject::isStringTagFast(arg)) {
                     arg->asString(context)->toUTF8String(context, s);
+                } else if (arg && arg->isDouble(context)) {
+                    s = protoPython::numfmt::floatRepr(arg->asDouble(context));   // an exact float
+                } else if (arg && (arg->isInteger(context) || arg == PROTO_TRUE || arg == PROTO_FALSE
+                                   || arg == PROTO_NONE)) {
+                    // Exact int, bool, None: str() is fixed.
+                    s = PythonEnvironment::reprObject(context, arg);
+                } else if (env) {
+                    const proto::ProtoObject* sv = env->callObject(env->getStrPrototype(), {arg ? arg : PROTO_NONE});
+                    if (!sv) return nullptr;
+                    const proto::ProtoString* ss = str_from_self(context, sv);
+                    if (ss) ss->toUTF8String(context, s);
                 } else {
-                    bool gotStr = false;
-                    if (env && arg && arg != PROTO_NONE) {
-                        const proto::ProtoObject* cls = env->getType(context, arg);
-                        const proto::ProtoString* strS = env->getStrString();
-                        const proto::ProtoObject* strMethod = nullptr;
-                        if (cls) {
-                            const proto::ProtoObject* mroAttr = env->getAttribute(context, cls, env->getMroString(), false);
-                            ::protoPython::TupleView mroT = mroAttr ? ::protoPython::PythonEnvironment::tupleView(context, mroAttr) : nullptr;
-                            if (mroT) {
-                                for (proto::proto_ulong mi = 0; mi < mroT->getSize(context); ++mi) {
-                                    const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
-                                    if (!base || base == PROTO_NONE) continue;
-                                    if (base == env->getObjectPrototype()) break;
-                                    if (base->hasOwnAttribute(context, strS) == PROTO_TRUE) {
-                                        strMethod = base->getOwnAttributeDirect(context, strS);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        if (strMethod && strMethod != PROTO_NONE) {
-                            const proto::ProtoObject* res = nullptr;
-                            const proto::ProtoList* eL = env->getEmptyList();
-                            if (strMethod->asMethod(context)) {
-                                res = strMethod->asMethod(context)(context,
-                                    const_cast<proto::ProtoObject*>(arg), nullptr, argsView(proto::ProtoListArguments(context, eL)), nullptr);
-                            } else {
-                                const proto::ProtoString* codeS = env->getCodeString();
-                                bool raw = (codeS && strMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE);
-                                const proto::ProtoList* selfArgs = context->newList();
-                                if (raw) selfArgs = selfArgs->appendLast(context, arg);
-                                res = invokePythonCallable(context, strMethod, selfArgs, nullptr);
-                            }
-                            if (res && res->isString(context)) {
-                                res->asString(context)->toUTF8String(context, s);
-                                gotStr = true;
-                            }
-                        }
-                    }
-                    if (!gotStr) s = PythonEnvironment::reprObject(context, arg);
+                    s = PythonEnvironment::reprObject(context, arg);
                 }
                 appendPercentText(s);
                 break;
             }
             case 'r': {
-                std::string s;
-                if (arg && arg->isString(context)) {
-                    std::string raw;
-                    arg->asString(context)->toUTF8String(context, raw);
-                    s = PythonEnvironment::reprStr(raw);
-                } else {
-                    s = PythonEnvironment::reprObject(context, arg);
-                }
-                appendPercentText(s);
+                appendPercentText(PythonEnvironment::reprObject(context, arg));
                 break;
             }
             case 'd':
@@ -18610,6 +18633,29 @@ static const proto::ProtoObject* py_dict_get(
     return res ? res : defaultVal;
 }
 
+// An instance __dict__ view (py_object_get_dict) is a snapshot of the
+// instance's namespace. Before a mutation whose effect depends on what the
+// namespace holds (pop, popitem, setdefault, del, clear) the view takes the
+// instance's current namespace, so the mutation acts on the live state and
+// never resurrects or misses a name written after the view was taken. The
+// view's reads between mutations stay a snapshot (CPYTHON_CONFORMANCE.md).
+static void instanceDictRefresh(proto::ProtoContext* context, const proto::ProtoObject* view) {
+    const proto::ProtoObject* owner = instanceDictOwner(context, view);
+    if (!owner) return;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return;
+    const proto::ProtoObject* fresh = py_object_get_dict(context, owner, nullptr, nullptr, nullptr);
+    if (!fresh || fresh == PROTO_NONE || fresh == view) return;
+    const proto::ProtoString* dS = env->getDataString();
+    const proto::ProtoString* kS = env->getKeysString();
+    const proto::ProtoObject* data = fresh->getOwnAttributeDirect(context, dS);
+    const proto::ProtoObject* keys = fresh->getOwnAttributeDirect(context, kS);
+    if (!data || !keys) return;
+    proto::ProtoObject* v = const_cast<proto::ProtoObject*>(view);
+    v->setAttribute(context, dS, data);
+    v->setAttribute(context, kS, keys);
+}
+
 static const proto::ProtoObject* py_dict_update(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -18897,9 +18943,11 @@ kwargs_phase:
         }
     }
 
+    // The pairs this call stores, in order (the merge below replaces `keys`
+    // and `dict` with the target's merged state).
+    const proto::ProtoList* const updKeys = keys;
+    const proto::ProtoSparseList* const updDict = dict;
     {
-        const proto::ProtoList* updKeys = keys;
-        const proto::ProtoSparseList* updDict = dict;
         const proto::proto_ulong updSize = updKeys->getSize(context);
         for (;;) {
             const proto::ProtoObject* keysObj = (target->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? target->getAttribute(context, keysName) : nullptr;
@@ -18919,51 +18967,16 @@ kwargs_phase:
             }
         }
     }
-    // Write-through for instance __dict__ proxy: when the target was
-    // produced by py_object_get_dict it carries a back-reference to
-    // the owning instance.  py_dict_update writes the new
-    // __data__/__keys__ on the proxy itself, but the instance's own
-    // __data__/__keys__ would otherwise stay stale and `obj.attr`
-    // lookups miss every key the update added.  Replay the update
-    // onto the underlying instance so attribute access sees it.
-    {
-        const proto::ProtoString* proxyTargetS =
-            PythonEnvironment::getInternedString(context, "\001__protopy_dict_proxy_target__");
-        const proto::ProtoObject* underlying = target->hasOwnAttribute(context, proxyTargetS) == PROTO_TRUE
-            ? target->getAttribute(context, proxyTargetS) : nullptr;
-        if (underlying && underlying != PROTO_NONE && underlying != target) {
-            // The instance's namespace mirror: __pydict_* for an instance
-            // of a built-in subclass (a dict subclass's __data__ holds its
-            // items), the canonical __data__/__keys__ otherwise.
-            const proto::ProtoString* dS = dataName;
-            const proto::ProtoString* kS = keysName;
-            if (env) instanceDictMirrorSlots(context, env, underlying, dS, kS);
-            // Walk the just-built keys list and copy each (key, value)
-            // onto the underlying instance's storage AND its native
-            // attribute table so subsequent `obj.attr` reads succeed.
-            for (proto::proto_ulong i = 0; i < keys->getSize(context); ++i) {
-                const proto::ProtoObject* k = keys->getAt(context, static_cast<int>(i));
-                if (!k || !k->isString(context)) continue;
-                const proto::ProtoString* nm = k->asString(context);
-                const proto::ProtoObject* v = dictStoredValue(context, dict, k);
-                if (!v) continue;
-                // Underlying __data__ / __keys__.
-                const proto::ProtoObject* uDataObj = underlying->hasOwnAttribute(context, dS) == PROTO_TRUE
-                    ? underlying->getAttribute(context, dS) : nullptr;
-                const proto::ProtoSparseList* uDl = uDataObj ? uDataObj->asSparseList(context) : context->newSparseList();
-                uDl = PythonEnvironment::dictDataPut(context, uDl, k, v);
-                const_cast<proto::ProtoObject*>(underlying)->setAttribute(context, dS, uDl->asObject(context));
-                const proto::ProtoObject* uKeysObj = underlying->hasOwnAttribute(context, kS) == PROTO_TRUE
-                    ? underlying->getAttribute(context, kS) : nullptr;
-                const proto::ProtoList* uKl = (uKeysObj && ::protoPython::listStorage(context, uKeysObj))
-                    ? ::protoPython::listStorage(context, uKeysObj) : context->newList();
-                if (!uKl->has(context, nm->asObject(context))) {
-                    uKl = uKl->appendLast(context, nm->asObject(context));
-                    const_cast<proto::ProtoObject*>(underlying)->setAttribute(context, kS, uKl->asObject(context));
-                }
-                // Native attribute mirror, under the key the Python name maps to.
-                const_cast<proto::ProtoObject*>(underlying)->setAttribute(context,
-                    PythonEnvironment::pythonAttributeKey(context, nm), v);
+    // Write-through for an instance __dict__ view (py_object_get_dict): the
+    // pairs this call stored are applied to the instance as `obj.k = v`.
+    // Only those: the rest of the view is a snapshot, and copying it back
+    // would undo attribute writes made after the view was taken.
+    if (env) {
+        if (const proto::ProtoObject* owner = instanceDictOwner(context, target)) {
+            for (proto::proto_ulong i = 0; i < updKeys->getSize(context); ++i) {
+                const proto::ProtoObject* k = updKeys->getAt(context, static_cast<int>(i));
+                const proto::ProtoObject* v = k ? dictStoredValue(context, updDict, k) : nullptr;
+                if (v) instanceDictOwnerSet(context, env, owner, k, v);
             }
         }
     }
@@ -18982,6 +18995,7 @@ static const proto::ProtoObject* py_dict_clear(
     // null there, which crashed).
     const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters);
     if (!receiver) return PROTO_NONE;
+    instanceDictRefresh(context, receiver);
     for (;;) {
         const proto::ProtoObject* keysObj = receiver->getOwnAttributeDirect(context, keysName);
         const proto::ProtoObject* dataObj = receiver->getOwnAttributeDirect(context, dataName);
@@ -19228,8 +19242,9 @@ static const proto::ProtoObject* py_dict_ior(
     PythonEnvironment::LazyComparePins otherPins(context, otherKeysObj, otherDataObj, nullptr, PythonEnvironment::LazyComparePins::Ambient::Yes);
     const proto::ProtoSparseList* otherDict = otherDataObj && otherDataObj->asSparseList(context) ? otherDataObj->asSparseList(context) : nullptr;
     // `d |= x` is d.update(x): any mapping or iterable of pairs, as in
-    // CPython (only `d | x` requires a dict).
-    if (!otherDict) {
+    // CPython (only `d | x` requires a dict). On an instance __dict__ view
+    // update() also writes the pairs through to the instance.
+    if (!otherDict || instanceDictOwner(context, self)) {
         if (!py_dict_update(context, self, nullptr, posArgs, nullptr)) return nullptr;
         return self;
     }
@@ -19289,6 +19304,7 @@ static const proto::ProtoObject* py_dict_setdefault(
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "\001__data__");
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "\001__keys__");
     if (!receiver) return PROTO_NONE;
+    instanceDictRefresh(context, receiver);
     DictKey dk;
     if (!dictKeyResolve(context, key, true, dk)) return nullptr;
     // Retry loop: the lookup and the insert see the same snapshot, so two
@@ -19342,6 +19358,7 @@ static const proto::ProtoObject* py_dict_pop(
         ? positionalParameters->getAt(context, 1 + posOff) : nullptr;
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "\001__keys__");
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "\001__data__");
+    if (receiver) instanceDictRefresh(context, receiver);
     DictKey dk;
     if (!dictKeyResolve(context, key, true, dk)) return nullptr;
     // Retry loop: value, removal and key list come from one snapshot and are
@@ -19396,6 +19413,7 @@ static const proto::ProtoObject* py_dict_popitem(
     // Unbound form dict.popitem(d): the receiver is the first argument.
     const proto::ProtoObject* receiver = dict_self_or_arg(context, self, positionalParameters);
     if (!receiver) return PROTO_NONE;
+    instanceDictRefresh(context, receiver);
     // Retry loop: the last entry is chosen from, and removed out of, one
     // snapshot installed with publishDictState, so two threads never pop the
     // same entry.
@@ -24614,7 +24632,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         return PythonEnvironment::getInternedString(ctx, "IEEE, little-endian")->asObject(ctx);
     };
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_float_repr));
-    floatPrototype = floatPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_float_repr));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_float_str));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getformat__"), rootContext_->fromMethod(nullptr, py_float_getformat));
     // CPython: float exposes __round__, __floor__, __ceil__, __trunc__
     // as numeric ABC methods.  Without these, direct dunder calls like
@@ -28298,6 +28316,12 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
                 && base->hasOwnAttribute(ctx, setattrDunderS) == PROTO_TRUE) {
             flags |= PYFLAG_HAS_CUSTOM_SETATTR;
         }
+        if (base != objectPrototype && base != typePrototype && base != intPrototype
+                && base != floatPrototype && base != strPrototype && base != boolPrototype
+                && ((strString && base->hasOwnAttribute(ctx, strString) == PROTO_TRUE)
+                    || (reprString && base->hasOwnAttribute(ctx, reprString) == PROTO_TRUE))) {
+            flags |= PYFLAG_HAS_CUSTOM_STR;
+        }
     };
     probe(cls);
     if (mroT) {
@@ -31948,6 +31972,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // doesn't propagate to existing instances of subclasses (B, C, D)
     // whose flags were frozen at class-creation time.
     if (pyFlagsString_ && (name == getattributeDunderString
+                           || name == strString || name == reprString   // PYFLAG_HAS_CUSTOM_STR
                            || name == setDunderString // __set__ on descr classes
                            || name == getDunderString // __get__ on descr classes
                            || (name && name->getSize(ctx) >= 4

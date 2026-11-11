@@ -150,7 +150,7 @@ bool parseSpec(const std::string& text, Spec& s, Result& err, const char* typeNa
     // Grouping is checked against the type at parse time, as in CPython.
     const std::string type = s.type.empty() ? std::string(defaultType) : s.type;
     if (const char g = s.grouping) {
-        const char t = type.size() == 1 ? type[0] : '\x01';
+        const char t = type.size() == 1 ? type[0] : '\x01';  // raw-key: a sentinel format type, not a name
         const bool always = type.empty() || t == 'd' || t == 'e' || t == 'f' || t == 'g' || t == 'E'
                             || t == 'G' || t == '%' || t == 'F';
         const bool underscoreOnly = t == 'b' || t == 'o' || t == 'x' || t == 'X';
@@ -436,7 +436,8 @@ std::string floatRepr(double value) {
     return (std::signbit(value) ? "-" : "") + intPart + rest;
 }
 
-Result formatFloat(double value, const std::string& spec) {
+Result formatFloat(double value, const std::string& spec, const char* typeName) {
+    if (!typeName) typeName = "float";
     if (spec.empty()) {
         Result r;
         r.text = floatRepr(value);
@@ -444,14 +445,15 @@ Result formatFloat(double value, const std::string& spec) {
     }
     Spec s;
     Result err;
-    if (!parseSpec(spec, s, err, "float")) return err;
-    if (!floatTypeAllowed(s.type)) return fail(Error::Value, unknownCode(s.type, "float"));
+    if (!parseSpec(spec, s, err, typeName)) return err;
+    if (!floatTypeAllowed(s.type)) return fail(Error::Value, unknownCode(s.type, typeName));
     return formatFloatSpec(value, s);
 }
 
 Result formatInt(bool negative, const std::function<std::string(int)>& digits,
                  const std::function<bool(double&)>& toDouble, const std::string& spec, bool isBool,
-                 bool boolValue) {
+                 bool boolValue, const char* typeName) {
+    if (!typeName) typeName = isBool ? "bool" : "int";
     if (spec.empty()) {
         Result r;
         if (isBool) r.text = boolValue ? "True" : "False";
@@ -460,8 +462,8 @@ Result formatInt(bool negative, const std::function<std::string(int)>& digits,
     }
     Spec s;
     Result err;
-    if (!parseSpec(spec, s, err, "int")) return err;
-    const char t = s.type.size() == 1 ? s.type[0] : (s.type.empty() ? 'd' : '\x01');
+    if (!parseSpec(spec, s, err, typeName)) return err;
+    const char t = s.type.size() == 1 ? s.type[0] : (s.type.empty() ? 'd' : '\x01');  // raw-key: a sentinel format type, not a name
     switch (t) {
         case 'e': case 'E': case 'f': case 'F': case 'g': case 'G': case '%': {
             double d = 0.0;
@@ -470,7 +472,7 @@ Result formatInt(bool negative, const std::function<std::string(int)>& digits,
         }
         case 'd': case 'n': case 'b': case 'o': case 'x': case 'X': case 'c': break;
         default:
-            return fail(Error::Value, unknownCode(s.type, "int"));
+            return fail(Error::Value, unknownCode(s.type, typeName));
     }
     if (s.precision >= 0) return fail(Error::Value, "Precision not allowed in integer format specifier");
     if (s.noNegZero) return fail(Error::Value, "Negative zero coercion (z) not allowed in integer format specifier");
@@ -520,13 +522,15 @@ Result formatInt(bool negative, const std::function<std::string(int)>& digits,
     return r;
 }
 
-Result formatString(const std::string& value, const std::string& spec) {
+Result formatString(const std::string& value, const std::string& spec, const char* typeName) {
+    if (!typeName) typeName = "str";
     Result r;
     if (spec.empty()) { r.text = value; return r; }
     Spec s;
-    if (!parseSpec(spec, s, r, "str", '<', "s")) return r;
-    if (!s.type.empty() && s.type != "s") return fail(Error::Value, unknownCode(s.type, "str"));
-    if (s.sign) return fail(Error::Value, "Sign not allowed in string format specifier");
+    if (!parseSpec(spec, s, r, typeName, '<', "s")) return r;
+    if (!s.type.empty() && s.type != "s") return fail(Error::Value, unknownCode(s.type, typeName));
+    if (s.sign) return fail(Error::Value, s.sign == ' ' ? "Space not allowed in string format specifier"
+                                                        : "Sign not allowed in string format specifier");
     if (s.noNegZero) return fail(Error::Value, "Negative zero coercion (z) not allowed in string format specifier");
     if (s.alternate) return fail(Error::Value, "Alternate form (#) not allowed in string format specifier");
     if (s.align == '=') return fail(Error::Value, "'=' alignment not allowed in string format specifier");
