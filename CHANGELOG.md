@@ -13,11 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed (in protoCore 3.6.0)
 
-A Python `list` keeps its elements in a protoCore `ProtoList`, which 3.6.0 turns from a persistent AVL tree (one element per node) into a relaxed radix balanced (RRB) tree with six elements per cell. The API and its persistence are unchanged, so behaviour is unchanged; the cost of each operation moves. protoCore's own measurements at 100,000 elements (protoCore 3.6.0 release notes; not yet measured in protoPython):
+A Python `list` keeps its elements in a protoCore `ProtoList`, which 3.6.0 turns from a persistent AVL tree (one element per node) into a relaxed radix balanced (RRB) tree with six elements per cell. The API and its persistence are unchanged, so behaviour is unchanged; the cost of each operation moves. protoCore's own measurements at 100,000 elements (protoCore 3.6.0 release notes); the protoPython measurements below take precedence where they differ:
 
 - **Faster:** indexing (`ProtoList::getAt`, 586 ns to 36 ns), `append` and `extend` (both append one element at a time, `appendLast`: 777 ns and 20 cells to 30 ns and 2 cells), item assignment `l[i] = x` (`setAt`, 892 ns to 356 ns), iteration (80 ns to 41 ns per element), and list slicing, which protoPython builds by indexing and appending.
-- **Slower:** `list.insert` (`insertAt`, 256 ns to 584 ns in the middle), `list + list` (`ProtoList::extend`, 283 ns to 754 ns, and up to 4.5x slower at 1,000 elements), `list.pop(i)` and `list.remove` away from the end, and tuple slicing with step 1 (`getSlice`): protoCore reports 1.2x to 2.7x slower for prepend, arbitrary insertion and removal, slicing and concatenation at 100,000 elements.
+- **Slower:** `list.insert` (`insertAt`, 256 ns to 584 ns in the middle), `list.pop(i)` and `list.remove` away from the end, and tuple slicing with step 1 (`getSlice`): protoCore reports 1.2x to 2.7x slower for prepend, arbitrary insertion and removal, slicing and concatenation at 100,000 elements.
 - No list operation allocates more than 1.3x the cells of the AVL form.
+
+**Measured in protoPython** (added after the tag; the same commit, v1.2.2, built against protoCore 3.5.2 and against 3.6.0; interleaved, 7 rounds after a warm-up, median wall time, identical output on both sides):
+
+- A list workload over 200,000 elements (append, random index, iteration, item assignment, 200 slices of 50,000, `insert`, `pop`, `a + a`, `sort`): 6,756 ms to 1,783 ms (0.26x). By phase: slicing 5.4 s to 1.1 s, `a + a` about 115 ms to 24 ms (protoPython's `+` does not go through `ProtoList::extend`), `sort` about 120 ms to 52 ms, item assignment, append, indexing, iteration and `pop` 15-35 % faster; `insert(0)` 4 ms to 5.5 ms (1.35x slower).
+- pyperf `sieve` 86 ms to 58 ms; `list_append_loop` 0.87x.
+- Unchanged within ±2 %: `exception_latency`, `int_sum_loop`, `range_iterate`, `binary_trees`, `fib`, `mandelbrot`, `nqueens`, `richards_lite`. Gains of 5-8 % on workloads without lists (`attr_lookup`, `call_recursion`, `str_concat_loop`, `fannkuch`) are within the binary-layout effect measured before and are not claimed.
 
 3.6.0 also fixes protoCore's adaptive heap controller, which protopy enables: a workload whose sweeps all walked one chain never had the collector's throughput measured, so the soft limit stayed at its initial value while a mutator waited 20-40 % of the time; a narrow sweep's throughput now counts too.
 
