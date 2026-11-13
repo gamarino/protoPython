@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(protoPython VERSION 1.2.2 LANGUAGES CXX)
+project(protoPython VERSION 1.2.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -102,6 +102,8 @@ set(PROTOPYTHON_STDLIB_INSTALL_PARENT "${CMAKE_INSTALL_LIBDIR}/protoPython")
 # 3.5.0 keeps SOVERSION 5; its ProtoSet change does not concern protoPython,
 # whose sets keep their own hash-indexed buckets (docs/SET_SUPPORT.md), so the
 # floor stays 3.4.0.
+# 3.6.0 keeps SOVERSION 5 and changes protoCore.h only in comments; ProtoList
+# becomes an RRB tree behind the same API, so the floor stays 3.4.0.
 set(PROTOCORE_MIN_VERSION      "3.4")
 set(PROTOCORE_MIN_VERSION_FULL "3.4.0")
 set(PROTOCORE_NEXT_MAJOR       "4.0.0")

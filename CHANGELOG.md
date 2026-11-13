@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-13
+
+**Built, tested and released against protoCore 3.6.0** (SOVERSION 5, unchanged since 3.4.0; `protoCore.h` changed only in comments). There is no source change in protoPython. The declared minimum for a build from source stays **protoCore 3.4.0**, which the Windows floor job still builds. CI pins protoCore tag `v3.6.0` on Linux, macOS and the first Windows job. The `.deb` is built against the 3.6.0 package, so it depends on `protocore (>= 3.6.0)` through protoCore's shlibs file, besides the declared `protocore (>= 3.4.0), protocore (<< 4.0.0), libpcre2-8-0 (>= 10.34)`.
+
+### Changed (in protoCore 3.6.0)
+
+A Python `list` keeps its elements in a protoCore `ProtoList`, which 3.6.0 turns from a persistent AVL tree (one element per node) into a relaxed radix balanced (RRB) tree with six elements per cell. The API and its persistence are unchanged, so behaviour is unchanged; the cost of each operation moves. protoCore's own measurements at 100,000 elements (protoCore 3.6.0 release notes; not yet measured in protoPython):
+
+- **Faster:** indexing (`ProtoList::getAt`, 586 ns to 36 ns), `append` and `extend` (both append one element at a time, `appendLast`: 777 ns and 20 cells to 30 ns and 2 cells), item assignment `l[i] = x` (`setAt`, 892 ns to 356 ns), iteration (80 ns to 41 ns per element), and list slicing, which protoPython builds by indexing and appending.
+- **Slower:** `list.insert` (`insertAt`, 256 ns to 584 ns in the middle), `list + list` (`ProtoList::extend`, 283 ns to 754 ns, and up to 4.5x slower at 1,000 elements), `list.pop(i)` and `list.remove` away from the end, and tuple slicing with step 1 (`getSlice`): protoCore reports 1.2x to 2.7x slower for prepend, arbitrary insertion and removal, slicing and concatenation at 100,000 elements.
+- No list operation allocates more than 1.3x the cells of the AVL form.
+
+3.6.0 also fixes protoCore's adaptive heap controller, which protopy enables: a workload whose sweeps all walked one chain never had the collector's throughput measured, so the soft limit stayed at its initial value while a mutator waited 20-40 % of the time; a narrow sweep's throughput now counts too.
+
 ## [1.2.2] - 2026-11-11
 
 Tested locally against protoCore 3.5.2 built from `../protoCore` (master eef87d6b). The change is confined to protoPython, which computes tuple hashes itself, and uses no protoCore API that 3.4.0 lacks, so the declared minimum stays **protoCore 3.4.0**; CI pins tag `v3.5.2`.
