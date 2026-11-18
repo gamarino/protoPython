@@ -791,10 +791,10 @@ static bool mp_isClassObject(const proto::ProtoObject* data,
     // MappingProxy's __data__ can legitimately be a non-object cell
     // (e.g. a raw SparseList when the proxy wraps a Python dict's
     // backing storage). protoCore's getAttribute strict-tag-checks
-    // its receiver as POINTER_TAG_OBJECT, so dispatch only when data
+    // that its receiver is an object cell, so dispatch only when data
     // is a proper cell object — a SparseList / Set / Tuple cannot
     // be a class anyway.
-    if ((reinterpret_cast<uintptr_t>(data) & 0x3F) != 0) return false;
+    if (!isObjectCell(context, data)) return false;
     const proto::ProtoString* clsS = env ? env->getClassString()
                                          : PythonEnvironment::getInternedString(context, "__class__");
     const proto::ProtoString* ipcS = env ? env->getIsPythonClassString()
@@ -1618,8 +1618,8 @@ void PythonEnvironment::cellClear(proto::ProtoContext* ctx, const proto::ProtoOb
 }
 
 bool PythonEnvironment::isCell(proto::ProtoContext* ctx, const proto::ProtoObject* obj) const {
-    // Cells are object cells (pointer tag 0); tagged values never are.
-    if (!obj || !cellPrototype || (reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0) return false;
+    // Cells are object cells; tagged values never are.
+    if (!obj || !cellPrototype || !isObjectCell(ctx, obj)) return false;
     return obj->getFirstParent(ctx) == cellPrototype;
 }
 
@@ -2392,7 +2392,7 @@ struct DescriptorMethods {
 static DescriptorMethods descriptorMethods(proto::ProtoContext* ctx, PythonEnvironment* env,
                                            const proto::ProtoObject* descr, bool wantDelete = false) {
     DescriptorMethods m;
-    if (!descr || descr == PROTO_NONE || (reinterpret_cast<uintptr_t>(descr) & 0x3F) != 0) return m;
+    if (!descr || descr == PROTO_NONE || !isObjectCell(ctx, descr)) return m;
     auto present = [](const proto::ProtoObject* v) { return v && v != PROTO_NONE ? v : nullptr; };
     const proto::ProtoObject* memberProto = env->getMemberDescriptorPrototype();
     if (memberProto && descr->getFirstParent(ctx) == memberProto) {
@@ -4467,7 +4467,7 @@ static const proto::ProtoObject* py_list_setitem(
     const proto::ProtoList* valueList = nullptr;
     if (!intIndex) {
         valueList = ::protoPython::listStorage(context, value);
-        if (!valueList && (reinterpret_cast<uintptr_t>(value) & 0x3F) == 0) {
+        if (!valueList && isObjectCell(context, value)) {
             const proto::ProtoObject* vd = value->getAttribute(context, dataName);
             if (vd) valueList = ::protoPython::listStorage(context, vd);
         }
@@ -4790,7 +4790,7 @@ static const proto::ProtoObject* py_str_iter_next(
     // Return the value as a real ProtoString.  Earlier this site wrapped
     // the char into a fresh ProtoObject with the strPrototype as a parent
     // and the actual character on a `__data__` attribute, but the wrapper
-    // is not POINTER_TAG_STRING, so the COMPARE_OP path's
+    // is not a heap string, so the COMPARE_OP path's
     // `a->isString(ctx) && b->isString(ctx)` branch was skipped and the
     // raw object compare returned inconsistent answers — `c == s[0]` and
     // `c != s[0]` could both come back True.  Returning the canonical
@@ -4824,8 +4824,8 @@ static const proto::ProtoObject* py_str_iter_next(
         return res ? res->asObject(context) : PROTO_NONE;
     };
     if (value) {
-        if (((uintptr_t)value & 0x3FF) == 129) {
-            return cpToStr(static_cast<unsigned int>((uintptr_t)value >> 10) & 0x1FFFFFu);
+        if (isUnicodeChar(context, value)) {
+            return cpToStr(static_cast<unsigned int>(value->asLong(context)) & 0x1FFFFFu);
         } else if (value->isInteger(context)) {
             return cpToStr(static_cast<unsigned int>(value->asLong(context)) & 0x1FFFFFu);
         } else if (value->isString(context)) {
@@ -5646,7 +5646,7 @@ private:
     void pinSnapshot() {
         if (!roots_) return;
         for (int i = 0; i < 2; ++i)
-            if (snap_[i] && (reinterpret_cast<uintptr_t>(snap_[i]) & 0x3F) != 1) pins_.push_back(roots_->add(snap_[i]));
+            if (snap_[i] && proto::ProtoObject::isCellPointer(snap_[i])) pins_.push_back(roots_->add(snap_[i]));
     }
     proto::ProtoContext* context_;
     proto::ProtoRootSet* roots_ = nullptr;
@@ -5701,19 +5701,11 @@ static bool dictKeyResolve(proto::ProtoContext* context, const proto::ProtoObjec
     return keyHash(context, key, raiseUnhashable, dk.hash, &dk.exact);
 }
 
-// protoCore's pointer tag of a ProtoMap handle (POINTER_TAG_MAP in
-// proto_internal.h, not a public header). TestExecutionEngine's
-// DictBucketTagMatchesProtoMap checks it against a real ProtoMap.
-static constexpr uintptr_t kProtoMapPointerTag = 27;
-static constexpr uintptr_t kPointerTagMask = 0x3F;
-static_assert(kProtoMapPointerTag <= kPointerTagMask, "pointer tags are 6 bits");
-
-// The bucket stored in `slot`, or nullptr when the slot holds a value. A tag
-// test: ProtoObject::asMap would also answer the map an object keeps in its
-// `__data__`, taking a value for a bucket.
-static inline const proto::ProtoMap* dictBucket(proto::ProtoContext*, const proto::ProtoObject* slot) {
-    return (reinterpret_cast<uintptr_t>(slot) & kPointerTagMask) == kProtoMapPointerTag
-        ? reinterpret_cast<const proto::ProtoMap*>(slot) : nullptr;
+// The bucket stored in `slot`, or nullptr when the slot holds a value. A bare
+// ProtoMap only (isProtoMap): ProtoObject::asMap would also answer the map an
+// object keeps in its `__data__`, taking a value for a bucket.
+static inline const proto::ProtoMap* dictBucket(proto::ProtoContext* ctx, const proto::ProtoObject* slot) {
+    return isProtoMap(ctx, slot) ? reinterpret_cast<const proto::ProtoMap*>(slot) : nullptr;
 }
 
 // The key an exact hash stands for: the embedded word itself.
@@ -6111,7 +6103,7 @@ bool PythonEnvironment::hashKey(proto::ProtoContext* ctx, const proto::ProtoObje
 // A lookup that reaches a bucket compares the candidate with the stored
 // elements by identity, then with the stored element's __eq__, as CPython
 // compares set entries of equal hash; an exception raised by __eq__
-// propagates. A bucket is recognised by its pointer tag: a bare ProtoList is
+// propagates. A bucket is recognised by its kind: a bare ProtoList is
 // never stored as a slot of its own (a list is unhashable, and the add path
 // files any bare list in a bucket).
 //
@@ -6131,11 +6123,11 @@ static inline proto::proto_ulong setSlotIndex(proto::proto_ulong hash) {
     return hash == kSetSurplusSlot ? hash - 1 : hash;
 }
 
-// The bucket a slot holds, or nullptr for a single element. Tag-only: an
-// object (pointer tag 0) or a string is never a bucket, whatever its
+// The bucket a slot holds, or nullptr for a single element. A bucket is a
+// bare ProtoList: an object cell or a string is never a bucket, whatever its
 // __data__ holds.
 static inline const proto::ProtoList* setBucket(proto::ProtoContext* context, const proto::ProtoObject* slot) {
-    if (!slot || (reinterpret_cast<uintptr_t>(slot) & 0x3F) == 0 || proto::ProtoObject::isStringTagFast(slot)) return nullptr;
+    if (!isProtoList(context, slot)) return nullptr;
     return slot->asList(context);
 }
 
@@ -9515,11 +9507,11 @@ static const proto::ProtoObject* py_str_translate(
     return PythonEnvironment::newStr(context, out);
 }
 
-// The set table a `__data__` payload holds, or nullptr. Tag-only on the
-// payload: an object (pointer tag 0) would answer asSparseList with its own
+// The set table a `__data__` payload holds, or nullptr. A kind test on the
+// payload: an object cell would answer asSparseList with its own
 // attribute storage.
 static inline const proto::ProtoSparseList* setPayload(proto::ProtoContext* context, const proto::ProtoObject* data) {
-    if (!data || (reinterpret_cast<uintptr_t>(data) & 0x3F) == 0) return nullptr;
+    if (!data || isObjectCell(context, data)) return nullptr;
     return data->asSparseList(context);
 }
 
@@ -10320,7 +10312,7 @@ static const proto::ProtoObject* py_set_rxor(
 // a dict, a namespace and every ordinary instance answer asSparseList too,
 // so the shape of `__data__` alone cannot tell a set.
 static const proto::ProtoSparseList* set_underlying(proto::ProtoContext* context, const proto::ProtoObject* self) {
-    if (!self || (reinterpret_cast<uintptr_t>(self) & 0x3F) != 0) return nullptr;
+    if (!self || !isObjectCell(context, self)) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env) return nullptr;
     const proto::ProtoObject* setProto = env->getSetPrototype();
@@ -13524,7 +13516,7 @@ static const proto::ProtoObject* bytes_pad(proto::ProtoContext* context, const p
         // buffer) is not accepted, as CPython's getargs 'c' rejects it.
         std::string f;
         const proto::ProtoObject* fillObj = posArgs->getAt(context, 1);
-        const bool byteString = env && fillObj && (reinterpret_cast<uintptr_t>(fillObj) & 0x3F) == 0
+        const bool byteString = env && fillObj && isObjectCell(context, fillObj)
             && ((env->getBytesPrototype() && fillObj->isInstanceOf(context, env->getBytesPrototype()) == PROTO_TRUE)
                 || (env->getBytearrayPrototype() && fillObj->isInstanceOf(context, env->getBytearrayPrototype()) == PROTO_TRUE));
         if (!byteString || !PythonEnvironment::bytesLikeContent(context, fillObj, f) || f.size() != 1) {
@@ -13734,7 +13726,7 @@ static const proto::ProtoObject* py_bytes_hex(
         // character, as CPython's _Py_strhex_impl requires.
         const proto::ProtoObject* sepObj = posArgs->getAt(context, 0);
         PythonEnvironment* envH = PythonEnvironment::fromContext(context);
-        const bool isBytesSep = envH && sepObj && (reinterpret_cast<uintptr_t>(sepObj) & 0x3F) == 0
+        const bool isBytesSep = envH && sepObj && isObjectCell(context, sepObj)
             && !sepObj->isString(context) && envH->getBytesPrototype()
             && sepObj->isInstanceOf(context, envH->getBytesPrototype()) == PROTO_TRUE
             && !(envH->getBytearrayPrototype() && sepObj->isInstanceOf(context, envH->getBytearrayPrototype()) == PROTO_TRUE);
@@ -17676,7 +17668,7 @@ static const proto::ProtoObject* py_dict_bool(
 enum class DictViewKind { None, Keys, Items, Values };
 
 static DictViewKind dictViewKind(proto::ProtoContext* context, const proto::ProtoObject* obj) {
-    if (!obj || (reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0) return DictViewKind::None;
+    if (!obj || !isObjectCell(context, obj)) return DictViewKind::None;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env || !(env->dictViewPrototypes[0] || env->dictViewPrototypes[1] || env->dictViewPrototypes[2])) return DictViewKind::None;
     // A view is a direct child of its view prototype (wrapInDictView).
@@ -19040,7 +19032,7 @@ static const proto::ProtoObject* py_dict_update(
                     const proto::ProtoList* pl = pt ? nullptr : ::protoPython::listStorage(context, pair);
                     // Only a tuple or list subclass instance keeps its items
                     // in __data__ (an iterator keeps its source there).
-                    if (!pt && !pl && (reinterpret_cast<uintptr_t>(pair) & 0x3F) == 0
+                    if (!pt && !pl && isObjectCell(context, pair)
                         && ((env->getTuplePrototype() && pair->isInstanceOf(context, env->getTuplePrototype()) == PROTO_TRUE)
                             || (env->getListPrototype() && pair->isInstanceOf(context, env->getListPrototype()) == PROTO_TRUE))) {
                         const proto::ProtoObject* pd = pair->getAttribute(context, dataName);
@@ -20929,7 +20921,7 @@ static const proto::ProtoString* moduleNamespaceKey(proto::ProtoContext* context
     if (key->isString(context)) return PythonEnvironment::pythonLookupKey(context, key->asString(context));
     // A str subclass instance carries its payload in __data__; only cell
     // objects have attributes (see mp_isClassObject).
-    if (env && (reinterpret_cast<uintptr_t>(key) & 0x3F) == 0) {
+    if (env && isObjectCell(context, key)) {
         const proto::ProtoObject* d = key->getAttribute(context, env->getDataString());
         if (d && d->isString(context)) return PythonEnvironment::pythonLookupKey(context, d->asString(context));
     }
@@ -22576,7 +22568,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             long long combined = static_cast<long long>(sp ^ fp);
             return proto::makeSmallInt(combined & 0x00FFFFFFFFFFFFFFLL);
         }));
-    // Register this as the prototype for all native POINTER_TAG_METHOD objects so they
+    // Register this as the prototype for all native protoCore method values so they
     // inherit __doc__, __get__, __call__ and other standard function attributes.
     rootContext_->space->methodPrototype = const_cast<proto::ProtoObject*>(methodPrototype);
 
@@ -28324,11 +28316,11 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 // __slots__ / descriptors after definition in any benchmark we run.
 void PythonEnvironment::registerImmutableBuiltinTypes(proto::ProtoContext* ctx) {
     auto immutable = [&](const proto::ProtoObject* t) {
-        if (!t || t == PROTO_NONE || (reinterpret_cast<uintptr_t>(t) & 0x3F) != 0) return;
+        if (!t || t == PROTO_NONE || !isObjectCell(ctx, t)) return;
         immutableBuiltinTypes_.insert(t);
     };
     auto noDict = [&](const proto::ProtoObject* t) {
-        if (!t || t == PROTO_NONE || (reinterpret_cast<uintptr_t>(t) & 0x3F) != 0) return;
+        if (!t || t == PROTO_NONE || !isObjectCell(ctx, t)) return;
         immutableBuiltinTypes_.insert(t);
         noDictBuiltinTypes_.insert(t);
     };
@@ -28340,7 +28332,7 @@ void PythonEnvironment::registerImmutableBuiltinTypes(proto::ProtoContext* ctx) 
         builtinsModule->processOwnAttributes(ctx, &sink,
             [](proto::ProtoContext* c, void* userData, const proto::ProtoString*, const proto::ProtoObject* value) {
                 Sink* k = static_cast<Sink*>(userData);
-                if (value && value != PROTO_NONE && (reinterpret_cast<uintptr_t>(value) & 0x3F) == 0
+                if (value && value != PROTO_NONE && isObjectCell(c, value)
                         && k->env->isActuallyAClass(c, value))
                     k->classes.push_back(value);
             });
@@ -28393,7 +28385,7 @@ bool PythonEnvironment::builtinAttributeWriteRejected(proto::ProtoContext* ctx, 
     (void)isDelete;  // CPython 3.14 reports a delete with the store's messages
     if (!obj || !name || immutableBuiltinTypes_.empty()) return false;
     std::string nm;
-    const bool isCell = obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0;
+    const bool isCell = obj != PROTO_NONE && isObjectCell(ctx, obj);
     if (isCell && immutableBuiltinTypes_.count(obj)) {
         name->toUTF8String(ctx, nm);
         std::string tn = "?";
@@ -28422,7 +28414,7 @@ bool PythonEnvironment::builtinAttributeWriteRejected(proto::ProtoContext* ctx, 
     if (PythonEnvironment::sameStringName(ctx, name, classString)) return false;
     if (isCell && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) return false;
     const proto::ProtoObject* onType = getAttribute(ctx, type, name, false);
-    if (onType && onType != PROTO_NONE && (reinterpret_cast<uintptr_t>(onType) & 0x3F) == 0
+    if (onType && onType != PROTO_NONE && isObjectCell(ctx, onType)
             && !isActuallyAClass(ctx, onType)) {
         // A data descriptor (a property with a setter) decides for itself.
         const proto::ProtoObject* dt = getType(ctx, onType);
@@ -28740,7 +28732,7 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     const proto::ProtoObject* res = nullptr;
     if (obj->isString(ctx)) {
         // ProtoObject::isString returns true for two shapes:
-        //   1. a primitive String cell (POINTER_TAG_STRING/SYMBOL/INLINE)
+        //   1. a primitive String cell (string, symbol or inline string)
         //   2. a wrapper Object cell whose __data__ is a String
         // For str subclasses (`class cistr(str): pass`), construction
         // builds shape (2): the instance is a wrapper whose first
@@ -29258,7 +29250,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !name) return nullptr;
 
-    // STRUCT-1: native-method introspection.  A POINTER_TAG_METHOD
+    // STRUCT-1: native-method introspection.  A protoCore method value
     // bound method (`[].__add__`, `list.append`, …) cannot carry
     // per-instance attributes, so `__name__` / `__qualname__` /
     // `__objclass__` / `__self__` are synthesised here from the
@@ -29356,7 +29348,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     // When `name` is already a canonical interned symbol
-    // (POINTER_TAG_SYMBOL), pointer-equality lookups in protoCore are
+    // (a symbol), pointer-equality lookups in protoCore are
     // authoritative — a null result truly means the attribute is absent
     // and the __keys__ content-comparison fallbacks below would only
     // iterate wastefully.  Profile of richards_lite attributed 13 % of
@@ -30475,7 +30467,7 @@ bool PythonEnvironment::instanceReadNeedsFullLookup(proto::ProtoContext* ctx, co
     // One chain lookup (the per-thread attribute cache answers repeats):
     // only a name a data descriptor governs is read through the full path.
     const proto::ProtoObject* d = cls->getAttribute(ctx, name);
-    if (!d || d == PROTO_NONE || (reinterpret_cast<uintptr_t>(d) & 0x3F) != 0) return false;
+    if (!d || d == PROTO_NONE || !isObjectCell(ctx, d)) return false;
     return descriptorMethods(ctx, this, d).isData();
 }
 
@@ -31418,7 +31410,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // entry named __class__ is not the object's class.
             const proto::ProtoObject* srcType = getType(ctx, obj);
             if (srcType && srcType != PROTO_NONE && immutableBuiltinTypes_.count(srcType)
-                    && obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0
+                    && obj != PROTO_NONE && isObjectCell(ctx, obj)
                     && obj->hasOwnAttribute(ctx, classString) == PROTO_TRUE) {
                 const proto::ProtoObject* own = obj->getOwnAttributeDirect(ctx, classString);
                 if (own && own != PROTO_NONE && own != srcType && isActuallyAClass(ctx, own)) {
@@ -32233,7 +32225,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         // descriptor probe entirely for non-OBJECT descr to keep
         // getAttribute/getType from hitting the strict-tag check.
         bool descrIsCell = descr && descr != PROTO_NONE &&
-                           (reinterpret_cast<uintptr_t>(descr) & 0x3F) == 0;
+                           isObjectCell(ctx, descr);
         if (descrIsCell) {
             // The descriptor protocol (descriptorMethods): __set__ from the
             // descriptor's type, called with (descr, obj, value).  A data
@@ -32279,7 +32271,7 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // (CPython's precedence).  The class is marked so instance reads take
     // the full lookup (PYFLAG_DESCR_SHADOW).  A class body's descriptors are
     // not stored through here.
-    if (objIsClass && (reinterpret_cast<uintptr_t>(value) & 0x3F) == 0 && value != PROTO_NONE) {
+    if (objIsClass && isObjectCell(ctx, value) && value != PROTO_NONE) {
         const DescriptorMethods dm = descriptorMethods(ctx, this, value);
         if (dm.isData() && dm.get) {
             markDataDescriptorShadow(ctx, res);
@@ -32374,7 +32366,7 @@ proto::ProtoObject* PythonEnvironment::localsMappingFrame(proto::ProtoContext* c
                                                          const proto::ProtoObject* globals,
                                                          const proto::ProtoObject* codeObj) {
     PythonEnvironment* env = fromContext(ctx);
-    if (!env || !locals || locals == PROTO_NONE || (reinterpret_cast<uintptr_t>(locals) & 0x3F) != 0) return nullptr;
+    if (!env || !locals || locals == PROTO_NONE || !isObjectCell(ctx, locals)) return nullptr;
     const proto::ProtoObject* type = env->getType(ctx, locals);
     if (!type || type == env->getModulePrototype()) return nullptr;
     // A dict (any object owning dict storage) or another mapping; a frame
@@ -32400,7 +32392,7 @@ proto::ProtoObject* PythonEnvironment::localsMappingFrame(proto::ProtoContext* c
 }
 
 const proto::ProtoObject* PythonEnvironment::localsMappingOf(proto::ProtoContext* ctx, const proto::ProtoObject* frame) {
-    if (!frame || (reinterpret_cast<uintptr_t>(frame) & 0x3F) != 0) return nullptr;
+    if (!frame || !isObjectCell(ctx, frame)) return nullptr;
     return frame->getOwnAttributeDirect(ctx, localsMappingName(ctx));
 }
 
@@ -33419,7 +33411,7 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
         // (set, dict, frozenset…) keep the legacy pointer-based
         // ordering until they grow proper rich comparison methods.
         if (op >= 2 && op <= 5) {
-            // Bound built-in methods (POINTER_TAG_METHOD cells) carry
+            // Bound built-in methods (protoCore method values) carry
             // no rich-comparison dunders, and CPython raises TypeError
             // when you try to order them.  Detect them via asMethod()
             // before the user-class check so test_method_wrapper and
@@ -33953,12 +33945,12 @@ const proto::ProtoObject* PythonEnvironment::callMethod(proto::ProtoContext* ctx
     // interpreter's CALL does, without building a bound method.  Anything
     // else goes through the full read (callMethod below).
     if (ctx && obj && obj != PROTO_NONE && nameS && args.size() < 15 &&
-            (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0 && obj->hasOwnAttribute(ctx, nameS) != PROTO_TRUE) {
+            isObjectCell(ctx, obj) && obj->hasOwnAttribute(ctx, nameS) != PROTO_TRUE) {
         const proto::ProtoObject* raw = obj->getAttribute(ctx, nameS);
         if (raw && raw != PROTO_NONE) {
             const bool isMethodCell = raw->isMethod(ctx);
             const bool compiled = isMethodCell && isCompiledFunction(ctx, raw);
-            const bool pyFunction = !isMethodCell && (reinterpret_cast<uintptr_t>(raw) & 0x3F) == 0 &&
+            const bool pyFunction = !isMethodCell && isObjectCell(ctx, raw) &&
                 raw->getFirstParent(ctx) == getFunctionPrototype();
             if (compiled || pyFunction) {
                 const proto::ProtoObject* type = getType(ctx, obj);
@@ -34039,7 +34031,7 @@ bool PythonEnvironment::ownAttributeFast(proto::ProtoContext* ctx, const proto::
     // (__get__: a function, a method, a property stored on the instance) or
     // the type overrides __getattribute__.  The synthesised dunders and an
     // own None (indistinguishable from "absent" here) take the full path.
-    if (!obj || obj == PROTO_NONE || (reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0) return false;
+    if (!obj || obj == PROTO_NONE || !isObjectCell(ctx, obj)) return false;
     if (key == getClassString() || key == getMroString() || key == getDictDunderString() ||
         key == getBasesString() || key == getGetattributeDunderString()) return false;
     const proto::ProtoObject* own = obj->getOwnAttributeDirect(ctx, key);
@@ -34047,7 +34039,7 @@ bool PythonEnvironment::ownAttributeFast(proto::ProtoContext* ctx, const proto::
     const proto::ProtoObject* objType = getType(ctx, obj);
     if (!objType || objType == PROTO_NONE
             || instanceReadNeedsFullLookup(ctx, objType, ensureClassFlags(ctx, objType), key)) return false;
-    if ((reinterpret_cast<uintptr_t>(own) & 0x3F) == 0) {
+    if (isObjectCell(ctx, own)) {
         const proto::ProtoObject* ownType = own->getFirstParent(ctx);
         if (ownType == getFunctionPrototype()) return false;
         if (ownType && ownType != PROTO_NONE && (ensureClassFlags(ctx, ownType) & PYFLAG_HAS_GET_DESCR)) return false;
@@ -34647,7 +34639,7 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         const proto::ProtoStringIterator* it = str->getIterator(ctx);
         if (it) return it->asObject(ctx);
     } else if (obj->asSparseList(ctx)
-               && ((reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0
+               && (!isObjectCell(ctx, obj)
                    || (dictPrototype && obj->isInstanceOf(ctx, dictPrototype) == PROTO_TRUE))) {
         // Dict iteration (keys). An object is a dict only by type: a plain
         // instance would otherwise iterate the `__keys__` its class keeps.

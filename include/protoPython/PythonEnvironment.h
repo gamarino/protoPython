@@ -3,6 +3,7 @@
 
 #include <protoCore.h>
 #include <protoPython/DiagUtils.h>
+#include <protoPython/ValueKinds.h>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -96,12 +97,12 @@ struct TupleView {
  * built are protoCore unicode-char values, which are not Python objects, so
  * no caller ever wanted them.
  *
- * Tag-only for a bare value; a wrapper (pointer tag 0) costs the one
+ * A kind test for a bare value; a wrapper object cell costs the one
  * `__data__` read that asList itself performs.  Allocates nothing.
  */
 inline const proto::ProtoList* listStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || proto::ProtoObject::isStringTagFast(obj)) return nullptr;
-    if ((reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0) {
+    if (isObjectCell(ctx, obj)) {
         const proto::ProtoObject* data = obj->getAttribute(ctx, ctx->space->literalData, false);
         if (!data || data == obj) return nullptr;
         return listStorage(ctx, data);
@@ -2200,7 +2201,7 @@ public:
         LazyPinSet(const LazyPinSet&) = delete;
         LazyPinSet& operator=(const LazyPinSet&) = delete;
         void add(const proto::ProtoObject* obj) {
-            if (!obj || (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 1) return;
+            if (!obj || !proto::ProtoObject::isCellPointer(obj)) return;
             if (!armed_) { pending_.push_back(obj); return; }
             if (roots_) handles_.push_back(roots_->add(obj));
         }
@@ -2274,7 +2275,7 @@ public:
 
         /** Whether comparing `o` with another trivial operand runs no Python code. */
         static bool trivialOperand(const proto::ProtoObject* o) {
-            return proto::ProtoObject::isStringTagFast(o) || (reinterpret_cast<uintptr_t>(o) & 0x3F) == 1;
+            return proto::ProtoObject::isStringTagFast(o) || (o && !proto::ProtoObject::isCellPointer(o));
         }
         /** Pins when comparing `x` with `y` may run Python code; returns armed(). */
         bool beforeCompare(const proto::ProtoObject* x, const proto::ProtoObject* y) {
@@ -2673,7 +2674,7 @@ private:
     // registered under and the prototype that owns it.  Populated by a
     // one-time post-bootstrap walk (registerNativeMethodNames()).  Lets
     // env->getAttribute synthesise `__name__` / `__qualname__` /
-    // `__objclass__` for POINTER_TAG_METHOD bound methods (e.g.
+    // `__objclass__` for protoCore method-value bound methods (e.g.
     // `[].__add__.__name__ == '__add__'`) without changing the
     // tagged-pointer binding form — keeping all 300+ asMethod() call
     // sites intact.

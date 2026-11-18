@@ -2335,7 +2335,7 @@ static const proto::ProtoObject* py_object_init(
                         // typePrototype's distinct __init__ first.
                         // Compare by both native-method pointer AND object
                         // identity: when __init__ is a Python user function
-                        // (POINTER_TAG_OBJECT, asMethod() == nullptr), the
+                        // (an object cell, asMethod() == nullptr), the
                         // method-pointer comparison degenerates to
                         // `nullptr != nullptr` → false, missing real Python-
                         // level overrides like `class TextIOWrapper:
@@ -6517,7 +6517,7 @@ const proto::ProtoObject* py_type(
         if (obj == PROTO_NONE) return env->getNoneTypePrototype();
 
         // STRUCT-1: `type([].append)` must report `method`.  protoCore's
-        // POINTER_TAG_METHOD tagged pointers carry no parent chain so
+        // protoCore method values carry no parent chain so
         // env->getType folds them to objectPrototype; intercept here at
         // the `type()` builtin (rather than in getType, which the
         // OP_LOAD_ATTR fast path relies on for descriptor-flag probes).

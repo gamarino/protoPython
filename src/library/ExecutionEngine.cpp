@@ -295,7 +295,7 @@ static bool typeChainInterceptsStore(proto::ProtoContext* ctx, PythonEnvironment
     {
         // Only an object cell can be a descriptor; a class stored as a class
         // attribute is not one, whatever methods it defines.
-        if (d && d != PROTO_NONE && (reinterpret_cast<uintptr_t>(d) & 0x3F) == 0
+        if (d && d != PROTO_NONE && isObjectCell(ctx, d)
                 && !env->isActuallyAClass(ctx, d)) {
             const proto::ProtoString* setS = env->getSetDunderString();
             static const proto::ProtoString* const delS =  // interned: perennial
@@ -351,7 +351,7 @@ bool PythonEnvironment::storeAttr(proto::ProtoContext* ctx, const proto::ProtoOb
                                   const proto::ProtoString* nameS, const proto::ProtoObject* value) {
     if (!ctx) ctx = rootContext_;
     if (!obj || !nameS) return false;
-    if (obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0 &&
+    if (obj != PROTO_NONE && isObjectCell(ctx, obj) &&
             nameS != getClassString() && nameS != getDictDunderString()) {
         const proto::ProtoObject* directType = obj->getFirstParent(ctx);
         if (directType && directType != PROTO_NONE && directType != getTypePrototype() &&
@@ -401,7 +401,7 @@ static bool attrGroupApplies(proto::ProtoContext* ctx, PythonEnvironment* env,
                              const proto::ProtoTuple* desc) {
     if (!env || !names || !desc || !obj || obj == PROTO_NONE) return false;
     // An object cell: not a tagged value (SmallInteger, string, ...).
-    if ((reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0) return false;
+    if (!isObjectCell(ctx, obj)) return false;
     if (obj->isString(ctx) || obj->isInteger(ctx) || obj->isBoolean(ctx) || obj->isFloat(ctx))
         return false;
     const proto::ProtoObject* directType = obj->getFirstParent(ctx);
@@ -2411,7 +2411,7 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     }
     // Fall through to __mul__/__rmul__ via the shared dunder dispatch so
     // Python-level user functions (which `asMethod` does NOT recognise —
-    // it only matches POINTER_TAG_METHOD C++ trampolines) actually run.
+    // it only matches protoCore method values (C++ trampolines)) actually run.
     // The previous inline lookup gated on `mul->asMethod(ctx)`, so any
     // user class with `def __mul__(self, ...)` silently produced None.
     const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__mul__", "__rmul__");
@@ -7059,7 +7059,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = ipow->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             } else if (ipow && ipow != PROTO_NONE) {
-                // Python-user-defined __ipow__ (POINTER_TAG_OBJECT, no
+                // Python-user-defined __ipow__ (an object cell, no
                 // native asMethod).  Route through invokeDunder which
                 // prepends self for Python callables.  Without this
                 // branch the dispatcher fell through to binaryPower
@@ -9003,10 +9003,10 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     // attribute named "__dict__" and lose the entries.
                     const proto::ProtoString* dictS = env ? env->getDictDunderString() : nullptr;
                     bool isDictAssign = dictS && nameS == dictS;
-                    // An object cell (pointer tag 0), as storeAttr requires:
+                    // An object cell, as storeAttr requires:
                     // not an int, str, bool or float.
                     if (!isClassAssign && !isDictAssign && !disableStoreattrFastpath && env && obj && obj != PROTO_NONE
-                            && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0) {
+                            && isObjectCell(ctx, obj)) {
                         // P2 type-flags fast path.  Replaces the legacy 3
                         // hasOwnAttribute probes (isPyClassS, slotsS,
                         // nameS-as-descriptor) with a single

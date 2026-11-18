@@ -55,7 +55,7 @@ const proto::ProtoString* storageName(proto::ProtoContext* ctx) {
     return env ? env->getBytearrayKey() : PythonEnvironment::getInternalString(ctx, "\001__bytearray__");
 }
 
-bool isCellObject(const PO* o) { return o && (reinterpret_cast<uintptr_t>(o) & 0x3F) == 0; }
+bool isCellObject(proto::ProtoContext* ctx, const PO* o) { return protoPython::isObjectCell(ctx, o); }
 
 // --- the chunked store ------------------------------------------------------
 
@@ -195,7 +195,7 @@ const PL* storePopLast(proto::ProtoContext* ctx, const PL* l) {
 const PO* bytearrayType(proto::ProtoContext* ctx);
 
 const PL* stateOf(proto::ProtoContext* ctx, const PO* obj, const PO** raw = nullptr) {
-    if (!isCellObject(obj)) return nullptr;
+    if (!isCellObject(ctx, obj)) return nullptr;
     const PO* cls = bytearrayType(ctx);
     if (!cls || obj == cls || obj->isInstanceOf(ctx, cls) != PROTO_TRUE) return nullptr;
     const PO* s = obj->getOwnAttributeDirect(ctx, storageName(ctx));
@@ -341,7 +341,7 @@ bool asIndex(proto::ProtoContext* ctx, const PO* v, long long& out, const char* 
         }
         return true;
     }
-    if (env && isCellObject(v)) {
+    if (env && isCellObject(ctx, v)) {
         const PO* m = env->getAttribute(ctx, v, PythonEnvironment::getInternedString(ctx, "__index__"), false);
         if (m && m != PROTO_NONE) {
             const PO* r = env->callObject(m, {});
@@ -368,7 +368,7 @@ bool asByte(proto::ProtoContext* ctx, const PO* v, unsigned char& out) {
         }
     } else {
         PythonEnvironment* env = envOf(ctx);
-        const PO* m = (env && isCellObject(v)) ? env->getAttribute(ctx, v, PythonEnvironment::getInternedString(ctx, "__index__"), false) : nullptr;
+        const PO* m = (env && isCellObject(ctx, v)) ? env->getAttribute(ctx, v, PythonEnvironment::getInternedString(ctx, "__index__"), false) : nullptr;
         if (!m || m == PROTO_NONE) {
             raiseType(ctx, "'" + typeName(ctx, v) + "' object cannot be interpreted as an integer");
             return false;
@@ -387,7 +387,7 @@ bool asByte(proto::ProtoContext* ctx, const PO* v, unsigned char& out) {
 
 bool isSlice(proto::ProtoContext* ctx, const PO* key) {
     PythonEnvironment* env = envOf(ctx);
-    return env && env->getSliceType() && isCellObject(key) && key->isInstanceOf(ctx, env->getSliceType()) == PROTO_TRUE;
+    return env && env->getSliceType() && isCellObject(ctx, key) && key->isInstanceOf(ctx, env->getSliceType()) == PROTO_TRUE;
 }
 
 struct Slice { long long start, stop, step, count; };
@@ -448,7 +448,7 @@ bool sourceBytes(proto::ProtoContext* ctx, const PO* src, std::string& out, cons
         return false;
     }
     PythonEnvironment* env = envOf(ctx);
-    if (env && isCellObject(src) && !env->getAttribute(ctx, src, env->getIterString(), false)) {
+    if (env && isCellObject(ctx, src) && !env->getAttribute(ctx, src, env->getIterString(), false)) {
         // Not iterable at all.
         raiseType(ctx, "can't extend bytearray with " + typeName(ctx, src));
         return false;
@@ -669,7 +669,7 @@ BA_METHOD(ba_add) {
 bool repeatCount(proto::ProtoContext* ctx, const PO* v, long long& n) {
     if (!(v == PROTO_TRUE || v == PROTO_FALSE || (v && v->isInteger(ctx)))) {
         PythonEnvironment* env = envOf(ctx);
-        const PO* m = (env && isCellObject(v)) ? env->getAttribute(ctx, v, PythonEnvironment::getInternedString(ctx, "__index__"), false) : nullptr;
+        const PO* m = (env && isCellObject(ctx, v)) ? env->getAttribute(ctx, v, PythonEnvironment::getInternedString(ctx, "__index__"), false) : nullptr;
         if (!m || m == PROTO_NONE) {
             raiseType(ctx, "can't multiply sequence by non-int of type '" + typeName(ctx, v) + "'");
             return false;
@@ -1024,9 +1024,9 @@ std::atomic<int> g_borrowedCount{0};
 
 const PO* fromBytesResult(proto::ProtoContext* ctx, const PO* r) {
     PythonEnvironment* env = envOf(ctx);
-    if (!env || !isCellObject(r)) return r;
+    if (!env || !isCellObject(ctx, r)) return r;
     const PO* type = env->getType(ctx, r);
-    auto isBytes = [&](const PO* o) { return isCellObject(o) && env->getType(ctx, o) == env->getBytesPrototype(); };
+    auto isBytes = [&](const PO* o) { return isCellObject(ctx, o) && env->getType(ctx, o) == env->getBytesPrototype(); };
     auto convert = [&](const PO* o) -> const PO* {
         std::string buf;
         if (!PythonEnvironment::bytesLikeContent(ctx, o, buf)) return o;
@@ -1133,7 +1133,7 @@ bool initialContent(proto::ProtoContext* ctx, const proto::ProtoArguments* args,
     if (PythonEnvironment::bytesLikeContent(ctx, src, out)) return true;
     // An int (or an object with __index__) makes a zero-filled buffer.
     const bool indexLike = src == PROTO_TRUE || src == PROTO_FALSE || src->isInteger(ctx)
-        || (env && isCellObject(src) && env->getAttribute(ctx, src, PythonEnvironment::getInternedString(ctx, "__index__"), false));
+        || (env && isCellObject(ctx, src) && env->getAttribute(ctx, src, PythonEnvironment::getInternedString(ctx, "__index__"), false));
     if (indexLike) {
         long long n = 0;
         if (!asIndex(ctx, src, n)) return false;
@@ -1144,12 +1144,12 @@ bool initialContent(proto::ProtoContext* ctx, const proto::ProtoArguments* args,
         out.assign(static_cast<size_t>(n), '\0');
         return true;
     }
-    if (env && isCellObject(src) && !env->getAttribute(ctx, src, env->getIterString(), false)
+    if (env && isCellObject(ctx, src) && !env->getAttribute(ctx, src, env->getIterString(), false)
         && !env->getAttribute(ctx, src, PythonEnvironment::getInternedString(ctx, "__getitem__"), false)) {
         raiseType(ctx, "cannot convert '" + typeName(ctx, src) + "' object to bytearray");
         return false;
     }
-    if (env && !isCellObject(src)) {
+    if (env && !isCellObject(ctx, src)) {
         raiseType(ctx, "cannot convert '" + typeName(ctx, src) + "' object to bytearray");
         return false;
     }
@@ -1213,7 +1213,7 @@ bool PythonEnvironment::bytesLikeContent(proto::ProtoContext* ctx, const proto::
         out.assign(bb->getBuffer(ctx), bb->getSize(ctx));
         return true;
     }
-    if (!isCellObject(obj) || obj->isString(ctx)) return false;
+    if (!isCellObject(ctx, obj) || obj->isString(ctx)) return false;
     if (bytearrayContent(ctx, obj, out)) return true;
     // A memoryview: the bytes it views, read from one snapshot.
     if (memoryviewContent(ctx, obj, out)) return true;
