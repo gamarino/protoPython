@@ -97,16 +97,21 @@ struct TupleView {
  * built are protoCore unicode-char values, which are not Python objects, so
  * no caller ever wanted them.
  *
- * A kind test for a bare value; a wrapper object cell costs the one
- * `__data__` read that asList itself performs.  Allocates nothing.
+ * The common wrapper owns its `__data__`, read through protoCore's attribute
+ * cache (getOwnAttributeDirect answers nullptr for a value that owns none,
+ * which includes every value that is not an object), and the payload is
+ * asked again.  Without an own `__data__`, ProtoObject::asList and
+ * ProtoObject::isString follow the same (inherited) `__data__` chain, so
+ * asList's answer is the list storage exactly when that chain does not end
+ * in a string; isString asks first, and the characters are never built.
+ * No question about the value's representation is asked: protoCore answers
+ * all three calls for every kind of value.  Allocates nothing.
  */
 inline const proto::ProtoList* listStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
-    if (!obj || proto::ProtoObject::isStringTagFast(obj)) return nullptr;
-    if (isObjectCell(ctx, obj)) {
-        const proto::ProtoObject* data = obj->getAttribute(ctx, ctx->space->literalData, false);
-        if (!data || data == obj) return nullptr;
-        return listStorage(ctx, data);
-    }
+    if (!obj || proto::isSmallInt(obj) || proto::ProtoObject::isStringTagFast(obj)) return nullptr;
+    if (const proto::ProtoObject* data = obj->getOwnAttributeDirect(ctx, ctx->space->literalData))
+        return data == obj ? nullptr : listStorage(ctx, data);
+    if (obj->isString(ctx)) return nullptr;
     return obj->asList(ctx);
 }
 
