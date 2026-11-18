@@ -479,6 +479,16 @@ set_tests_properties(conformity_const_cast_report PROPERTIES
     TIMEOUT 60
     LABELS "regression_gate")
 
+# protoPython depends on protoCore's public API only: no proto_internal.h, no
+# hand-copied pointer tags, embedded types or cell layouts under src/ or
+# include/.
+add_test(NAME source/no-protocore-internals
+    COMMAND ${PROTOPYTHON_SH} ${CMAKE_SOURCE_DIR}/tests/conformity/scripts/check_no_protocore_internals.sh
+            ${CMAKE_SOURCE_DIR})
+set_tests_properties(source/no-protocore-internals PROPERTIES
+    TIMEOUT 60
+    LABELS "regression_gate")
+
 add_test(NAME protopy_cli_help COMMAND $<TARGET_FILE:protopy> --help)
 add_test(NAME protopy_cli_missing_module
     COMMAND ${PROTOPYTHON_ASSERT_EXIT} 65 $<TARGET_FILE:protopy> --dry-run --module __proto_missing__)
@@ -2642,6 +2652,13 @@ set_tests_properties(protopy_bytes_str_compare PROPERTIES
 add_test(NAME protopy_bytes_find_needle_type
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/bytes_find_needle_type.py)
 set_tests_properties(protopy_bytes_find_needle_type PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
+# Attribute writes, descriptors and buffer arguments are decided by type, for every value kind.
+add_test(NAME protopy_value_dispatch_by_type
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/value_dispatch_by_type.py)
+set_tests_properties(protopy_value_dispatch_by_type PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")

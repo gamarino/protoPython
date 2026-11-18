@@ -1262,15 +1262,19 @@ TEST(ExecutionEngineTest, ConcurrentExecutionTwoThreads) {
     EXPECT_EQ(bVal->asLong(ctx), 2);
 }
 
-// dictBucket (PythonEnvironment.cpp) recognises a bucket by protoCore's
-// ProtoMap pointer tag, a constant of protoCore's internal header: a real
-// ProtoMap must carry it.
-TEST(ExecutionEngineTest, DictBucketTagMatchesProtoMap) {
+// dictBucket (PythonEnvironment.cpp) recognises a bucket with isProtoMap, which
+// uses protoCore's public API only: a real ProtoMap is one; a list, a string,
+// a SmallInteger and an object cell are not.
+TEST(ExecutionEngineTest, DictBucketIsRecognisedByPublicApi) {
     protoPython::PythonEnvironment env(STDLIB_PATH);
     proto::ProtoContext* ctx = env.getContext();
     const proto::ProtoMap* m = ctx->newMap();
     ASSERT_NE(m, nullptr);
-    EXPECT_EQ(reinterpret_cast<uintptr_t>(m->asObject(ctx)) & 0x3F, 27u);
+    EXPECT_TRUE(protoPython::isProtoMap(ctx, m->asObject(ctx)));
+    EXPECT_FALSE(protoPython::isProtoMap(ctx, ctx->newList()->asObject(ctx)));
+    EXPECT_FALSE(protoPython::isProtoMap(ctx, ctx->fromInteger(5)));
+    EXPECT_FALSE(protoPython::isProtoMap(ctx, ctx->fromUTF8String("ab")));
+    EXPECT_FALSE(protoPython::isProtoMap(ctx, ctx->space->objectPrototype->newChild(ctx, false)));
 }
 
 // A dict or set indexes a key by its Python hash h: the SmallInteger tagged
@@ -1372,4 +1376,51 @@ TEST(ExecutionEngineTest, NamespaceProbeMissDoesNotInternTheName) {
     // 2000 distinct names were probed; a few symbols may come from the
     // compilation of the snippet itself.
     EXPECT_LT(after - before, 100u) << "symbols before " << before << ", after " << after;
+}
+
+// The value-kind tests of include/protoPython/ValueKinds.h use protoCore's
+// public API only, never its pointer tags. They tell a bare protoCore
+// collection from an object (parentless or not) and from every other kind,
+// including the kinds whose ProtoSpace prototype is objectPrototype (doubles,
+// LargeIntegers, methods, byte buffers).
+namespace {
+const proto::ProtoObject* valueKindsNopMethod(proto::ProtoContext*, const proto::ProtoObject*,
+                                              const proto::ParentLink*, const proto::ProtoArguments*,
+                                              const proto::ProtoKeywordArguments*) {
+    return PROTO_NONE;
+}
+}  // namespace
+
+TEST(ValueKindsTest, KindTestsUsePublicApiExactly) {
+    proto::ProtoSpace space;
+    proto::ProtoContext* ctx = space.rootContext;
+    const proto::ProtoObject* parentless = ctx->newObject(false);
+    const proto::ProtoObject* child = parentless->newChild(ctx, false);
+    const proto::ProtoObject* dbl = ctx->fromDouble(2.5);
+    const proto::ProtoObject* big = ctx->fromString("123456789012345678901234567890", 10);
+    const proto::ProtoObject* method =
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(parentless), valueKindsNopMethod);
+    const proto::ProtoObject* buffer = ctx->newBuffer(8);
+    const proto::ProtoObject* list = ctx->newList()->asObject(ctx);
+    const proto::ProtoObject* chr = ctx->fromUnicodeChar(0x263A);
+
+    const proto::ProtoObject* sparse = ctx->newSparseList()->asObject(ctx);
+    for (const proto::ProtoObject* v : {parentless, child, dbl, big, method, buffer, chr, sparse,
+                                        ctx->fromLong(7), PROTO_NONE, PROTO_TRUE}) {
+        EXPECT_FALSE(protoPython::isProtoList(ctx, v));
+        EXPECT_FALSE(protoPython::isProtoMap(ctx, v));
+    }
+    for (const proto::ProtoObject* v : {parentless, child, dbl, big, method, buffer, chr, list,
+                                        ctx->fromLong(7), PROTO_NONE, PROTO_TRUE})
+        EXPECT_FALSE(protoPython::isProtoSparseList(ctx, v));
+    EXPECT_TRUE(protoPython::isProtoSparseList(ctx, sparse));
+    EXPECT_FALSE(protoPython::isProtoSparseList(ctx, space.sparseListPrototype->newChild(ctx, false)));
+
+    EXPECT_TRUE(protoPython::isProtoList(ctx, list));
+    EXPECT_FALSE(protoPython::isProtoList(ctx, reinterpret_cast<const proto::ProtoObject*>(
+                                                   proto::ProtoString::fromUTF8(ctx, "ab"))));
+    EXPECT_FALSE(protoPython::isProtoList(ctx, space.listPrototype->newChild(ctx, false)));
+    EXPECT_TRUE(protoPython::isUnicodeChar(ctx, chr));
+    EXPECT_EQ(chr->asLong(ctx), 0x263A);
+    EXPECT_FALSE(protoPython::isUnicodeChar(ctx, ctx->fromLong(0x263A)));
 }

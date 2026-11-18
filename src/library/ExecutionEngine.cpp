@@ -292,20 +292,16 @@ static bool typeChainInterceptsStore(proto::ProtoContext* ctx, PythonEnvironment
     if (directType->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) return true;
     if (d == PROTO_NONE || proto::isSmallInt(d) || proto::ProtoObject::isStringTagFast(d)
             || d == PROTO_TRUE || d == PROTO_FALSE) return false;
-    {
-        // Only an object cell can be a descriptor; a class stored as a class
-        // attribute is not one, whatever methods it defines.
-        if (d && d != PROTO_NONE && (reinterpret_cast<uintptr_t>(d) & 0x3F) == 0
-                && !env->isActuallyAClass(ctx, d)) {
-            const proto::ProtoString* setS = env->getSetDunderString();
-            static const proto::ProtoString* const delS =  // interned: perennial
-                PythonEnvironment::getInternedString(ctx, "__delete__");
-            if ((setS && d->hasAttribute(ctx, setS) == PROTO_TRUE)
-                    || d->hasAttribute(ctx, delS) == PROTO_TRUE)
-                return true;
-        }
-    }
-    return false;
+    // Any other value is asked through its prototype chain, which protoCore
+    // resolves for every kind of value: a float, a tuple or a native method
+    // answers no __set__ / __delete__. A class stored as a class attribute is
+    // not a descriptor, whatever methods it defines.
+    if (!d || env->isActuallyAClass(ctx, d)) return false;
+    const proto::ProtoString* setS = env->getSetDunderString();
+    static const proto::ProtoString* const delS =  // interned: perennial
+        PythonEnvironment::getInternedString(ctx, "__delete__");
+    return (setS && d->hasAttribute(ctx, setS) == PROTO_TRUE)
+        || d->hasAttribute(ctx, delS) == PROTO_TRUE;
 }
 
 // LOAD_ATTR's full lookup.  An AttributeError raised while the attribute is
@@ -351,8 +347,10 @@ bool PythonEnvironment::storeAttr(proto::ProtoContext* ctx, const proto::ProtoOb
                                   const proto::ProtoString* nameS, const proto::ProtoObject* value) {
     if (!ctx) ctx = rootContext_;
     if (!obj || !nameS) return false;
-    if (obj != PROTO_NONE && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0 &&
-            nameS != getClassString() && nameS != getDictDunderString()) {
+    // The plain write needs the receiver's class: its first parent, which
+    // protoCore answers PROTO_NONE for every value that has none (an int, a
+    // str, a float, a tuple, ...); those take env->setAttribute's protocol.
+    if (obj != PROTO_NONE && nameS != getClassString() && nameS != getDictDunderString()) {
         const proto::ProtoObject* directType = obj->getFirstParent(ctx);
         if (directType && directType != PROTO_NONE && directType != getTypePrototype() &&
                 directType != getModulePrototype() && obj != getBuiltinsModule()) {
@@ -400,12 +398,12 @@ static bool attrGroupApplies(proto::ProtoContext* ctx, PythonEnvironment* env,
                              const proto::ProtoObject* obj, const proto::ProtoTuple* names,
                              const proto::ProtoTuple* desc) {
     if (!env || !names || !desc || !obj || obj == PROTO_NONE) return false;
-    // An object cell: not a tagged value (SmallInteger, string, ...).
-    if ((reinterpret_cast<uintptr_t>(obj) & 0x3F) != 0) return false;
-    if (obj->isString(ctx) || obj->isInteger(ctx) || obj->isBoolean(ctx) || obj->isFloat(ctx))
-        return false;
+    // The receiver's class; a value without one (an int, a str, a float, a
+    // tuple, ...) answers PROTO_NONE and takes the per-write path.
     const proto::ProtoObject* directType = obj->getFirstParent(ctx);
     if (!directType || directType == PROTO_NONE || directType == env->getTypePrototype())
+        return false;
+    if (obj->isString(ctx) || obj->isInteger(ctx) || obj->isBoolean(ctx) || obj->isFloat(ctx))
         return false;
     if (directType == env->getModulePrototype() || obj == env->getBuiltinsModule()) return false;
     if (env->isActuallyAClass(ctx, obj)) return false;
@@ -2411,7 +2409,7 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     }
     // Fall through to __mul__/__rmul__ via the shared dunder dispatch so
     // Python-level user functions (which `asMethod` does NOT recognise —
-    // it only matches POINTER_TAG_METHOD C++ trampolines) actually run.
+    // it only matches protoCore method values (C++ trampolines)) actually run.
     // The previous inline lookup gated on `mul->asMethod(ctx)`, so any
     // user class with `def __mul__(self, ...)` silently produced None.
     const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__mul__", "__rmul__");
@@ -7059,7 +7057,7 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                 result = ipow->asMethod(ctx)(ctx, a, nullptr, argsView(proto::ProtoListArguments(ctx, oneArg)), nullptr);
                 if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             } else if (ipow && ipow != PROTO_NONE) {
-                // Python-user-defined __ipow__ (POINTER_TAG_OBJECT, no
+                // Python-user-defined __ipow__ (an object cell, no
                 // native asMethod).  Route through invokeDunder which
                 // prepends self for Python callables.  Without this
                 // branch the dispatcher fell through to binaryPower
@@ -9003,10 +9001,10 @@ const proto::ProtoObject* Activation::dispatch(proto::proto_ulong pcFrom,
                     // attribute named "__dict__" and lose the entries.
                     const proto::ProtoString* dictS = env ? env->getDictDunderString() : nullptr;
                     bool isDictAssign = dictS && nameS == dictS;
-                    // An object cell (pointer tag 0), as storeAttr requires:
-                    // not an int, str, bool or float.
-                    if (!isClassAssign && !isDictAssign && !disableStoreattrFastpath && env && obj && obj != PROTO_NONE
-                            && (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0) {
+                    // The receiver's class decides below (directType): a
+                    // value without one (int, str, bool, float, tuple, ...)
+                    // has no first parent and takes the slow path.
+                    if (!isClassAssign && !isDictAssign && !disableStoreattrFastpath && env && obj && obj != PROTO_NONE) {
                         // P2 type-flags fast path.  Replaces the legacy 3
                         // hasOwnAttribute probes (isPyClassS, slotsS,
                         // nameS-as-descriptor) with a single

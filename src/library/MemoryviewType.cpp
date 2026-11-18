@@ -46,8 +46,6 @@ namespace {
 using PO = proto::ProtoObject;
 using PL = proto::ProtoList;
 
-bool isCellObject(const PO* o) { return o && (reinterpret_cast<uintptr_t>(o) & 0x3F) == 0; }
-
 // View states.
 constexpr long long kLive = 0;
 constexpr long long kHeld = 1;
@@ -318,7 +316,7 @@ void sourceRange(proto::ProtoContext* ctx, const View& v, long long from, long l
         return;
     }
     const PO* d = v.data;
-    if (!d->isByteBuffer(ctx) && isCellObject(d) && !d->isString(ctx)) {
+    if (!d->isByteBuffer(ctx) && !d->isString(ctx)) {
         PythonEnvironment* env = envOf(ctx);
         const PO* inner = env ? d->getAttribute(ctx, env->getDataString()) : nullptr;
         if (inner && inner->isByteBuffer(ctx)) d = inner;
@@ -442,7 +440,7 @@ MV_METHOD(mv_new_impl) {
     }
     std::string content;
     const PO* bytesType = env->getBytesPrototype();
-    if (isCellObject(obj) && bytesType && obj->isInstanceOf(ctx, bytesType) == PROTO_TRUE && PythonEnvironment::bytesLikeContent(ctx, obj, content)) {
+    if (obj && bytesType && obj->isInstanceOf(ctx, bytesType) == PROTO_TRUE && PythonEnvironment::bytesLikeContent(ctx, obj, content)) {
         v.data = obj;
         v.exporter = obj;
         v.len = static_cast<long long>(content.size());
@@ -454,7 +452,8 @@ MV_METHOD(mv_new_impl) {
         v.len = static_cast<long long>(obj->asByteBuffer(ctx)->getSize(ctx));
         return storeView(ctx, cls, v);
     }
-    if (isCellObject(obj)) {
+    // array.array, recognised by its attributes (looked up by type).
+    if (obj) {
         // array.array: a read-only view of a copy of its items (protoPython's
         // arrays export no shared memory), with the array's typecode.
         const PO* tc = env->getAttribute(ctx, obj, PythonEnvironment::getInternedString(ctx, "typecode"), false);
@@ -561,7 +560,7 @@ long long itemIndex(proto::ProtoContext* ctx, const View& v, const PO* key) {
 
 bool isSlice(proto::ProtoContext* ctx, const PO* key) {
     PythonEnvironment* env = envOf(ctx);
-    return env && env->getSliceType() && isCellObject(key) && key->isInstanceOf(ctx, env->getSliceType()) == PROTO_TRUE;
+    return env && env->getSliceType() && key && key->isInstanceOf(ctx, env->getSliceType()) == PROTO_TRUE;
 }
 
 // slice.indices(len) for the view: start, step and count.
@@ -877,7 +876,7 @@ MV_GETTER(get_contiguous, contiguous(v) ? PROTO_TRUE : PROTO_FALSE)
 
 bool isMemoryview(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     const PO* t = mvType(ctx);
-    return t && isCellObject(obj) && obj != t && obj->isInstanceOf(ctx, t) == PROTO_TRUE;
+    return t && obj && obj != t && obj->isInstanceOf(ctx, t) == PROTO_TRUE;
 }
 
 bool memoryviewContent(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {

@@ -3,6 +3,7 @@
 
 #include <protoCore.h>
 #include <protoPython/DiagUtils.h>
+#include <protoPython/ValueKinds.h>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -96,16 +97,21 @@ struct TupleView {
  * built are protoCore unicode-char values, which are not Python objects, so
  * no caller ever wanted them.
  *
- * Tag-only for a bare value; a wrapper (pointer tag 0) costs the one
- * `__data__` read that asList itself performs.  Allocates nothing.
+ * The common wrapper owns its `__data__`, read through protoCore's attribute
+ * cache (getOwnAttributeDirect answers nullptr for a value that owns none,
+ * which includes every value that is not an object), and the payload is
+ * asked again.  Without an own `__data__`, ProtoObject::asList and
+ * ProtoObject::isString follow the same (inherited) `__data__` chain, so
+ * asList's answer is the list storage exactly when that chain does not end
+ * in a string; isString asks first, and the characters are never built.
+ * No question about the value's representation is asked: protoCore answers
+ * all three calls for every kind of value.  Allocates nothing.
  */
 inline const proto::ProtoList* listStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
-    if (!obj || proto::ProtoObject::isStringTagFast(obj)) return nullptr;
-    if ((reinterpret_cast<uintptr_t>(obj) & 0x3F) == 0) {
-        const proto::ProtoObject* data = obj->getAttribute(ctx, ctx->space->literalData, false);
-        if (!data || data == obj) return nullptr;
-        return listStorage(ctx, data);
-    }
+    if (!obj || proto::isSmallInt(obj) || proto::ProtoObject::isStringTagFast(obj)) return nullptr;
+    if (const proto::ProtoObject* data = obj->getOwnAttributeDirect(ctx, ctx->space->literalData))
+        return data == obj ? nullptr : listStorage(ctx, data);
+    if (obj->isString(ctx)) return nullptr;
     return obj->asList(ctx);
 }
 
@@ -2200,7 +2206,7 @@ public:
         LazyPinSet(const LazyPinSet&) = delete;
         LazyPinSet& operator=(const LazyPinSet&) = delete;
         void add(const proto::ProtoObject* obj) {
-            if (!obj || (reinterpret_cast<uintptr_t>(obj) & 0x3F) == 1) return;
+            if (!obj || !proto::ProtoObject::isCellPointer(obj)) return;
             if (!armed_) { pending_.push_back(obj); return; }
             if (roots_) handles_.push_back(roots_->add(obj));
         }
@@ -2274,7 +2280,7 @@ public:
 
         /** Whether comparing `o` with another trivial operand runs no Python code. */
         static bool trivialOperand(const proto::ProtoObject* o) {
-            return proto::ProtoObject::isStringTagFast(o) || (reinterpret_cast<uintptr_t>(o) & 0x3F) == 1;
+            return proto::ProtoObject::isStringTagFast(o) || (o && !proto::ProtoObject::isCellPointer(o));
         }
         /** Pins when comparing `x` with `y` may run Python code; returns armed(). */
         bool beforeCompare(const proto::ProtoObject* x, const proto::ProtoObject* y) {
@@ -2673,7 +2679,7 @@ private:
     // registered under and the prototype that owns it.  Populated by a
     // one-time post-bootstrap walk (registerNativeMethodNames()).  Lets
     // env->getAttribute synthesise `__name__` / `__qualname__` /
-    // `__objclass__` for POINTER_TAG_METHOD bound methods (e.g.
+    // `__objclass__` for protoCore method-value bound methods (e.g.
     // `[].__add__.__name__ == '__add__'`) without changing the
     // tagged-pointer binding form — keeping all 300+ asMethod() call
     // sites intact.
