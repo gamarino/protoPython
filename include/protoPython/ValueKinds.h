@@ -68,6 +68,17 @@ inline bool isProtoMap(proto::ProtoContext* ctx, const proto::ProtoObject* v) {
 }
 
 /**
+ * True when `v` is a bare protoCore ProtoSparseList (a dict's or a set's
+ * storage): the same composition as isProtoList, because
+ * ProtoObject::asSparseList also answers the storage an object keeps under
+ * `__data__`.
+ */
+inline bool isProtoSparseList(proto::ProtoContext* ctx, const proto::ProtoObject* v) {
+    if (!v || proto::isSmallInt(v) || v->getPrototype(ctx) != ctx->space->sparseListPrototype) return false;
+    return v->getFirstParent(ctx) == PROTO_NONE;
+}
+
+/**
  * True when `v` is a protoCore Unicode character (ProtoContext::
  * fromUnicodeChar). protoCore has no public isUnicodeChar; a Unicode
  * character is the one value that is not a cell and whose prototype is
