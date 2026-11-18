@@ -6,50 +6,27 @@
 // never copies its pointer tags, embedded types or cell layouts; the CTest
 // case source/no-protocore-internals enforces it.
 //
-// Two documented facts of the public API carry the compositions below:
-//  - ProtoObject::getPrototype answers, for every value that is not an
-//    object cell, the ProtoSpace prototype of its kind (listPrototype,
-//    unicodeCharPrototype, ...); for an object cell it answers the object's
-//    first parent, or objectPrototype when it has none.
-//  - ProtoObject::getFirstParent answers PROTO_NONE for every value that is
-//    not an object cell, and for a parentless object.
-// Several kinds' ProtoSpace prototypes are aliases of objectPrototype (see
-// isAliasedCellKind), so prototype identity is used only for kinds with a
-// prototype of their own (lists, Unicode characters).
+// protoPython does not ask whether a value is a "plain object cell": protoCore
+// resolves attributes on every value through its prototype, and
+// getFirstParent, hasOwnAttribute, getOwnAttributeDirect, hasParent and
+// isInstanceOf answer every value, so the runtime asks the type question
+// (or does the lookup) directly.  What remains here are kind tests for the
+// one question the type cannot answer: which protoCore collection a
+// `__data__` payload is (the wrapper-vs-bare duality of lists, dicts and
+// sets).  They rest on one documented fact of the public API:
+// ProtoObject::getPrototype answers, for a value that is not an object, the
+// ProtoSpace prototype of its kind (listPrototype, sparseListPrototype,
+// unicodeCharPrototype, ...), and for an object its first parent;
+// getFirstParent answers PROTO_NONE for a value without parents.
 
 #include <protoCore.h>
 
 namespace protoPython {
 
-// protoCore leaves the ProtoSpace prototype of several cell kinds aliased to
-// objectPrototype (LargeIntegers, doubles, methods, byte buffers, threads,
-// external pointers and buffers), so getPrototype cannot tell such a value
-// from a parentless object. The public tag-only predicates do.
-inline bool isAliasedCellKind(proto::ProtoContext* ctx, const proto::ProtoObject* v) {
-    return v->isDouble(ctx) || v->isInteger(ctx) || v->isMethod(ctx) || v->isByteBuffer(ctx) ||
-           v->asThread(ctx) != nullptr || v->asExternalPointer(ctx) != nullptr ||
-           v->asExternalBuffer(ctx) != nullptr;
-}
-
-/**
- * True when `v` is a protoCore object cell (an instance, a class, a module,
- * a function object, ...): not a SmallInteger, string, double, collection,
- * method or other tagged value. Inline rejects first; then the common case,
- * an object with a parent, is decided by one call.
- */
-inline bool isObjectCell(proto::ProtoContext* ctx, const proto::ProtoObject* v) {
-    if (!v || proto::isSmallInt(v) || proto::ProtoObject::isStringTagFast(v)) return false;
-    if (v->getFirstParent(ctx) != PROTO_NONE) return true;
-    if (!proto::ProtoObject::isCellPointer(v)) return false;
-    const proto::ProtoObject* p = v->getPrototype(ctx);
-    if (p != nullptr && p != ctx->space->objectPrototype) return false;
-    return !isAliasedCellKind(ctx, v);
-}
-
 /**
  * True when `v` is a bare protoCore ProtoList (either storage form): not a
  * string, which ProtoObject::asList also answers for, and not an object
- * cell wrapping a list under `__data__`. One call for a value of another
+ * wrapping a list under `__data__`. One call for a value of another
  * kind; SmallIntegers are rejected inline.
  */
 inline bool isProtoList(proto::ProtoContext* ctx, const proto::ProtoObject* v) {

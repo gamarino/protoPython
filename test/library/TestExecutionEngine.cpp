@@ -1379,9 +1379,10 @@ TEST(ExecutionEngineTest, NamespaceProbeMissDoesNotInternTheName) {
 }
 
 // The value-kind tests of include/protoPython/ValueKinds.h use protoCore's
-// public API only, never its pointer tags. protoCore aliases several kinds'
-// prototypes to objectPrototype (doubles, LargeIntegers, methods, byte
-// buffers), so an object cell is not decided by getPrototype alone.
+// public API only, never its pointer tags. They tell a bare protoCore
+// collection from an object (parentless or not) and from every other kind,
+// including the kinds whose ProtoSpace prototype is objectPrototype (doubles,
+// LargeIntegers, methods, byte buffers).
 namespace {
 const proto::ProtoObject* valueKindsNopMethod(proto::ProtoContext*, const proto::ProtoObject*,
                                               const proto::ParentLink*, const proto::ProtoArguments*,
@@ -1403,11 +1404,17 @@ TEST(ValueKindsTest, KindTestsUsePublicApiExactly) {
     const proto::ProtoObject* list = ctx->newList()->asObject(ctx);
     const proto::ProtoObject* chr = ctx->fromUnicodeChar(0x263A);
 
-    EXPECT_TRUE(protoPython::isObjectCell(ctx, parentless));
-    EXPECT_TRUE(protoPython::isObjectCell(ctx, child));
-    for (const proto::ProtoObject* v : {dbl, big, method, buffer, list, chr, ctx->fromLong(7),
-                                        PROTO_NONE, PROTO_TRUE})
-        EXPECT_FALSE(protoPython::isObjectCell(ctx, v));
+    const proto::ProtoObject* sparse = ctx->newSparseList()->asObject(ctx);
+    for (const proto::ProtoObject* v : {parentless, child, dbl, big, method, buffer, chr, sparse,
+                                        ctx->fromLong(7), PROTO_NONE, PROTO_TRUE}) {
+        EXPECT_FALSE(protoPython::isProtoList(ctx, v));
+        EXPECT_FALSE(protoPython::isProtoMap(ctx, v));
+    }
+    for (const proto::ProtoObject* v : {parentless, child, dbl, big, method, buffer, chr, list,
+                                        ctx->fromLong(7), PROTO_NONE, PROTO_TRUE})
+        EXPECT_FALSE(protoPython::isProtoSparseList(ctx, v));
+    EXPECT_TRUE(protoPython::isProtoSparseList(ctx, sparse));
+    EXPECT_FALSE(protoPython::isProtoSparseList(ctx, space.sparseListPrototype->newChild(ctx, false)));
 
     EXPECT_TRUE(protoPython::isProtoList(ctx, list));
     EXPECT_FALSE(protoPython::isProtoList(ctx, reinterpret_cast<const proto::ProtoObject*>(
