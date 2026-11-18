@@ -52,7 +52,7 @@ struct Bytes {
 void bytesArg(proto::ProtoContext* ctx, const PO* v, Bytes& out, const char* fn) {
     const PO* d = v;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (d && !d->isByteBuffer(ctx) && isObjectCell(ctx, d) && !d->isString(ctx) && env) {
+    if (d && !d->isByteBuffer(ctx) && !d->isString(ctx) && env) {
         const PO* inner = d->getAttribute(ctx, env->getDataString());
         if (inner && inner->isByteBuffer(ctx) && env->getBytesPrototype()
             && d->isInstanceOf(ctx, env->getBytesPrototype()) == PROTO_TRUE)

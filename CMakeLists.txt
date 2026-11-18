@@ -2655,6 +2655,13 @@ set_tests_properties(protopy_bytes_find_needle_type PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 120
     LABELS "regression_gate")
+# Attribute writes, descriptors and buffer arguments are decided by type, for every value kind.
+add_test(NAME protopy_value_dispatch_by_type
+    COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/value_dispatch_by_type.py)
+set_tests_properties(protopy_value_dispatch_by_type PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    TIMEOUT 120
+    LABELS "regression_gate")
 # A bare module name is a NameError until imported; prototype attributes are not names.
 add_test(NAME protopy_global_names_no_import
     COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/global_names_no_import.py)
